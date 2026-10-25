@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Desk | Object Detection & Monitoring System (CVIP)</title>
+  
+  <!-- Modern Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  
+  <!-- KaTeX for beautiful math equations -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" onload="renderMathInElement(document.body);"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <!-- TensorFlow.js & COCO-SSD Model -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+
+  <!-- Application Stylesheet -->
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <!-- ================= App Header ================= -->
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-icon">
+        <i data-lucide="scan"></i>
+      </div>
+      <div class="brand-info">
+        <h1>Smart Desk Vision</h1>
+        <span>CVIP Object Detection & Workspace Monitor</span>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="tab-btn active" data-tab="monitor">
+        <i data-lucide="layout-dashboard"></i> Live Monitor
+      </button>
+      <button class="tab-btn" data-tab="pipeline">
+        <i data-lucide="cpu"></i> CVIP Pipeline Studio
+      </button>
+      <button class="tab-btn" data-tab="analytics">
+        <i data-lucide="bar-chart-3"></i> Analytics
+      </button>
+      <button class="tab-btn" data-tab="theory">
+        <i data-lucide="book-open"></i> Project Report & Theory
+      </button>
+    </nav>
+
+    <!-- Header Actions -->
+    <div class="header-actions">
+      <div id="model-status-badge" class="status-badge">
+        <span class="status-indicator"></span> AI Model: Ready
+      </div>
+      <div id="fps-val" class="fps-counter">60 FPS</div>
+    </div>
+  </header>
+
+  <!-- ================= Main Container ================= -->
+  <main class="main-container">
+
+    <!-- ================= TAB 1: LIVE MONITOR ================= -->
+    <section id="tab-monitor" class="tab-content active">
+
+      <!-- Preset Scenarios Selector Bar -->
+      <div class="scenario-grid">
+        <div class="scenario-card active" data-scenario="clean">
+          <div class="scenario-title"><i data-lucide="check-circle" style="color:var(--accent-emerald);"></i> 1. Clean Desk</div>
+          <div class="scenario-desc">Optimal ergonomics, low clutter, beverage safely positioned in zone.</div>
+        </div>
+        <div class="scenario-card" data-scenario="cluttered">
+          <div class="scenario-title"><i data-lucide="alert-triangle" style="color:var(--accent-amber);"></i> 2. High Clutter Desk</div>
+          <div class="scenario-desc">Multiple books, loose stationery, high edge density clutter.</div>
+        </div>
+        <div class="scenario-card" data-scenario="hazard">
+          <div class="scenario-title"><i data-lucide="flame" style="color:var(--accent-rose);"></i> 3. Spill Hazard Alert</div>
+          <div class="scenario-desc">Coffee mug placed dangerously close to laptop keyboard edge.</div>
+        </div>
+        <div class="scenario-card" data-scenario="distraction">
+          <div class="scenario-title"><i data-lucide="smartphone" style="color:var(--accent-purple);"></i> 4. Study Distraction</div>
+          <div class="scenario-desc">Smartphone in active focus zone triggering distraction penalty.</div>
+        </div>
+      </div>
+
+      <!-- Main Layout: Viewport + Sidebar HUD -->
+      <div class="monitor-layout">
+        
+        <!-- Left: Video / Canvas Viewport -->
+        <div class="viewport-card">
+          <!-- Toolbar -->
+          <div class="viewport-toolbar">
+            <div class="toolbar-group">
+              <button id="btn-start-camera" class="btn btn-primary">
+                <i data-lucide="camera"></i> Start Webcam Feed
+              </button>
+              <button id="btn-open-upload" class="btn">
+                <i data-lucide="upload"></i> Upload Image / Video
+              </button>
+            </div>
+
+            <div class="toolbar-group">
+              <button id="btn-toggle-zones" class="btn btn-toggle active">
+                <i data-lucide="grid"></i> Zones
+              </button>
+              <button id="btn-toggle-hazards" class="btn btn-toggle active">
+                <i data-lucide="zap"></i> Hazard Vectors
+              </button>
+              <button id="btn-toggle-audio" class="btn">
+                <i data-lucide="volume-2"></i> Audio Alerts
+              </button>
+              <button id="btn-snapshot" class="btn">
+                <i data-lucide="camera"></i> Snapshot
+              </button>
+            </div>
+          </div>
+
+          <!-- Canvas / Video Surface -->
+          <div class="canvas-wrapper">
+            <video id="webcam-video" autoplay playsinline muted></video>
+            <canvas id="detection-canvas"></canvas>
+
+            <!-- Flashing Critical Hazard Banner -->
+            <div id="hazard-banner" class="hazard-banner">
+              ⚠️ <span>CRITICAL SPILL HAZARD DETECTED!</span>
+            </div>
+          </div>
+
+          <!-- Viewport Footer Controls -->
+          <div class="viewport-footer">
+            <div class="slider-group">
+              <span>Confidence Threshold:</span>
+              <input type="range" id="conf-threshold" min="0.2" max="0.9" step="0.05" value="0.5">
+              <span id="conf-val" style="font-family:var(--font-mono); font-weight:700;">50%</span>
+            </div>
+            <div>
+              <span>System: <strong>Real-time GPU WebGL Inference</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Sidebar Diagnostics HUD -->
+        <div class="sidebar-hud">
+          
+          <!-- Card 1: Desk Clutter Index Gauge -->
+          <div class="hud-card">
+            <div class="hud-title">
+              <span>Desk Clutter Index (DCI)</span>
+              <i data-lucide="activity"></i>
+            </div>
+            <div class="clutter-gauge-wrapper">
+              <div class="gauge-circle">
+                <svg viewBox="0 0 100 100">
+                  <circle class="gauge-bg" cx="50" cy="50" r="40"></circle>
+                  <circle id="gauge-fill-path" class="gauge-fill" cx="50" cy="50" r="40"></circle>
+                </svg>
+                <div class="gauge-text">
+                  <div id="clutter-score" class="gauge-score">28%</div>
+                  <div class="gauge-label">Clutter</div>
+                </div>
+              </div>
+              <div class="clutter-metrics">
+                <div class="clutter-metric-row">
+                  <span>Rating:</span>
+                  <span id="clutter-label" style="color:var(--accent-emerald);">Clean</span>
+                </div>
+                <div class="clutter-metric-row">
+                  <span>Objects:</span>
+                  <span id="clutter-obj-count">4</span>
+                </div>
+                <div class="clutter-metric-row">
+                  <span>Occupied Area:</span>
+                  <span id="clutter-area-ratio">32%</span>
+                </div>
+                <div class="clutter-metric-row">
+                  <span>Edge Density:</span>
+                  <span id="clutter-edge-density">24%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2: Detected Categories Summary -->
+          <div class="hud-card">
+            <div class="hud-title">
+              <span>Categorized Inventory</span>
+              <i data-lucide="layers"></i>
+            </div>
+            <div class="category-grid">
+              <div class="category-card productive">
+                <div class="category-icon">📚</div>
+                <div class="category-details">
+                  <h4>Productive</h4>
+                  <div id="count-productive" class="count">2</div>
+                </div>
+              </div>
+              <div class="category-card electronics">
+                <div class="category-icon">💻</div>
+                <div class="category-details">
+                  <h4>Electronics</h4>
+                  <div id="count-electronics" class="count">2</div>
+                </div>
+              </div>
+              <div class="category-card spill">
+                <div class="category-icon">☕</div>
+                <div class="category-details">
+                  <h4>Liquids</h4>
+                  <div id="count-spill" class="count">1</div>
+                </div>
+              </div>
+              <div class="category-card distraction">
+                <div class="category-icon">📱</div>
+                <div class="category-details">
+                  <h4>Distraction</h4>
+                  <div id="count-distraction" class="count">0</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 3: Proximity & Ergonomics Status -->
+          <div class="hud-card">
+            <div class="hud-title">
+              <span>Safety & Focus Telemetry</span>
+              <i data-lucide="shield-check"></i>
+            </div>
+            <div class="status-pill-list">
+              <div class="status-pill-item">
+                <div class="status-pill-label">
+                  <i data-lucide="smartphone" style="font-size:0.9rem;"></i> Distraction Status
+                </div>
+                <span id="tag-distraction" class="status-tag safe">Focus Zone Clear</span>
+              </div>
+              <div class="status-pill-item">
+                <div class="status-pill-label">
+                  <i data-lucide="user-check" style="font-size:0.9rem;"></i> Ergonomics
+                </div>
+                <span id="tag-ergonomics" class="status-tag safe">Good Posture</span>
+              </div>
+              <div class="status-pill-item">
+                <div class="status-pill-label">
+                  <i data-lucide="focus" style="font-size:0.9rem;"></i> Session Focus Score
+                </div>
+                <span id="focus-score-val" style="font-family:var(--font-mono); font-weight:700; color:var(--accent-cyan);">95%</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 4: Live Event Log -->
+          <div class="hud-card">
+            <div class="hud-title">
+              <span>Activity & Safety Stream</span>
+              <i data-lucide="terminal"></i>
+            </div>
+            <div id="event-logs" class="event-log-container">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= TAB 2: CVIP PIPELINE STUDIO ================= -->
+    <section id="tab-pipeline" class="tab-content">
+      <div class="pipeline-layout">
+        
+        <!-- Left Steps Menu -->
+        <div class="pipeline-steps-nav">
+          <div class="pipeline-step-item active" data-step="1">
+            <div style="display:flex; align-items:center;">
+              <span class="pipeline-step-num">1</span>
+              <div>
+                <strong>RGB Input</strong>
+                <div style="font-size:0.72rem; color:var(--text-muted);">24-bit Color Space</div>
+              </div>
+            </div>
+            <i data-lucide="chevron-right"></i>
+          </div>
+
+          <div class="pipeline-step-item" data-step="2">
+            <div style="display:flex; align-items:center;">
+              <span class="pipeline-step-num">2</span>
+              <div>
+                <strong>Grayscale Conversion</strong>
+                <div style="font-size:0.72rem; color:var(--text-muted);">Luminance Weighting</div>
+              </div>
+            </div>
+            <i data-lucide="chevron-right"></i>
+          </div>
+
+          <div class="pipeline-step-item" data-step="3">
+            <div style="display:flex; align-items:center;">
+              <span class="pipeline-step-num">3</span>
+              <div>
+                <strong>Gaussian Smoothing</strong>
+                <div style="font-size:0.72rem; color:var(--text-muted);">5x5 Convolution Filter</div>
+              </div>
+            </div>
+            <i data-lucide="chevron-right"></i>
+          </div>
+
+          <div class="pipeline-step-item" data-step="4">
+            <div style="display:flex; align-items:center;">
+              <span class="pipeline-step-num">4</span>
+              <div>
+                <strong>Sobel Gradients</strong>
+                <div style="font-size:0.72rem; color:var(--text-muted);">Spatial Derivatives |G|</div>
+              </div>
+            </div>
+            <i data-lucide="chevron-right"></i>
+          </div>
+
+          <div class="pipeline-step-item" data-step="5">
+            <div style="display:flex; align-items:center;">
+              <span class="pipeline-step-num">5</span>
+              <div>
+                <strong>Canny Edge Detection</strong>
+                <div style="font-size:0.72rem; color:var(--text-muted);">NMS & Hysteresis</div>
+              </div>
+            </div>
+            <i data-lucide="chevron-right"></i>
+          </div>
+
+          <div class="pipeline-step-item" data-step="6">
+            <div style="display:flex; align-items:center;">
+              <span class="pipeline-step-num">6</span>
+              <div>
+                <strong>Otsu Global Binarization</strong>
+                <div style="font-size:0.72rem; color:var(--text-muted);">Max Inter-Class Variance</div>
+              </div>
+            </div>
+            <i data-lucide="chevron-right"></i>
+          </div>
+
+          <div class="pipeline-step-item" data-step="7">
+            <div style="display:flex; align-items:center;">
+              <span class="pipeline-step-num">7</span>
+              <div>
+                <strong>HSV Color Masking</strong>
+                <div style="font-size:0.72rem; color:var(--text-muted);">Liquid / Cup Isolation</div>
+              </div>
+            </div>
+            <i data-lucide="chevron-right"></i>
+          </div>
+
+          <div class="pipeline-step-item" data-step="8">
+            <div style="display:flex; align-items:center;">
+              <span class="pipeline-step-num">8</span>
+              <div>
+                <strong>Final Neural Detection</strong>
+                <div style="font-size:0.72rem; color:var(--text-muted);">Bounding Box Localization</div>
+              </div>
+            </div>
+            <i data-lucide="chevron-right"></i>
+          </div>
+        </div>
+
+        <!-- Right Pipeline Visualizer Card -->
+        <div class="pipeline-view-card">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h2 id="pipe-step-title" style="font-size:1.15rem; color:#fff;">Step 1: Original Color Space (RGB)</h2>
+            <div style="display:flex; gap:0.75rem; align-items:center;">
+              <span style="font-size:0.8rem; color:var(--text-muted);">Canny Thresholds:</span>
+              <input type="range" id="pipe-canny-low" min="10" max="60" value="25" title="Low Threshold" style="width:70px;">
+              <input type="range" id="pipe-canny-high" min="50" max="150" value="65" title="High Threshold" style="width:70px;">
+            </div>
+          </div>
+
+          <!-- Pipeline Canvas View -->
+          <div class="pipeline-canvas-box">
+            <canvas id="pipeline-canvas"></canvas>
+          </div>
+
+          <!-- Formula & Mathematical Explanation -->
+          <div class="formula-box" id="pipe-formula">
+            RGB Pixel Vector: \( \mathbf{P}(x,y) = [R(x,y), G(x,y), B(x,y)]^T \)
+          </div>
+
+          <p id="pipe-desc" style="font-size:0.88rem; color:var(--text-muted); line-height:1.6;">
+            Raw input image captured from workspace camera with full 24-bit 3-channel color representation.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= TAB 3: ANALYTICS & TRENDS ================= -->
+    <section id="tab-analytics" class="tab-content">
+      
+      <!-- Export & Action Bar -->
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
+        <div>
+          <h2 style="font-size:1.3rem;">Workspace Telemetry & Audit</h2>
+          <p style="font-size:0.85rem; color:var(--text-muted);">Session metrics, clutter progression, and object occurrence frequencies.</p>
+        </div>
+        <div style="display:flex; gap:0.75rem;">
+          <button id="btn-export-report" class="btn btn-primary">
+            <i data-lucide="file-text"></i> Export Project Audit Report (PDF/Print)
+          </button>
+          <button id="btn-export-csv" class="btn">
+            <i data-lucide="download"></i> Download CSV Logs
+          </button>
+        </div>
+      </div>
+
+      <!-- Charts Grid -->
+      <div class="charts-grid">
+        <div class="chart-card">
+          <h3>Desk Clutter Index (DCI) Over Time</h3>
+          <div class="chart-container">
+            <canvas id="chart-clutter-trend"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <h3>Object Distribution by Category</h3>
+          <div class="chart-container">
+            <canvas id="chart-category-dist"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= TAB 4: THEORY & VIVA DEFENSE ================= -->
+    <section id="tab-theory" class="tab-content">
+      <div class="doc-section">
+        <h2><i data-lucide="graduation-cap"></i> Academic CVIP Project Documentation</h2>
+        <p>
+          The <strong>Smart Desk Object Detection and Monitoring System</strong> combines classical digital image processing principles with modern deep learning convolutional architectures to evaluate workspace cleanliness, ergonomics, study distractions, and liquid spill hazards.
+        </p>
+
+        <h3>1. System Architecture & Processing Pipeline</h3>
+        <p>The system executes an 8-stage image processing and vision inference pipeline:</p>
+        <ol>
+          <li><strong>Image Acquisition:</strong> Frame sampled from video feed or static image matrix \( I(x, y) \).</li>
+          <li><strong>Color Space Conversion:</strong> ITU-R BT.601 luminance mapping \( Y = 0.299R + 0.587G + 0.114B \).</li>
+          <li><strong>Gaussian Filtering:</strong> 2D convolution with a \( 5\times5 \) normalized kernel for noise suppression.</li>
+          <li><strong>Gradient Derivation:</strong> Sobel operators \( G_x, G_y \) compute edge magnitude and orientation angle \( \theta \).</li>
+          <li><strong>Canny Edge Detection:</strong> Non-Maximum Suppression (NMS) and double-threshold hysteresis.</li>
+          <li><strong>Otsu Global Binarization:</strong> Separates foreground clutter by maximizing inter-class variance \( \sigma_B^2 \).</li>
+          <li><strong>Neural Object Detection:</strong> Single-shot multi-box detection (COCO-SSD / MobileNetV2) computing class probabilities and bounding box coordinates.</li>
+          <li><strong>Spatial Proximity & Clutter Analytics:</strong> Evaluates Euclidean hazard distances and the Desk Clutter Index (DCI).</li>
+        </ol>
+
+        <h3>2. Mathematical Formulations</h3>
+        
+        <div class="formula-box" style="margin: 1rem 0;">
+          <strong>Desk Clutter Index (DCI):</strong><br>
+          \[ \text{DCI} = \min\left(100, \; 100 \times \left[ 0.35 \cdot \min\left(\frac{N}{8}, 1\right) + 0.40 \cdot \frac{\sum_{i=1}^N \text{Area}(B_i)}{\text{Area}_{\text{desk}}} + 0.25 \cdot E_{\text{density}} \right]\right) \]
+        </div>
+
+        <div class="formula-box" style="margin: 1rem 0;">
+          <strong>Spill Hazard Proximity Metric:</strong><br>
+          \[ d_{\text{hazard}} = \min_{i \in \text{Liquids}, j \in \text{Tech}} \sqrt{(x_i - x_j)^2 + (y_i - y_j)^2} \]
+          \[ \text{Condition: If } d_{\text{hazard}} < 110\text{px} \implies \text{CRITICAL HAZARD ALARM} \]
+        </div>
+
+        <div class="formula-box" style="margin: 1rem 0;">
+          <strong>Intersection over Union (IoU):</strong><br>
+          \[ \text{IoU}(B_{\text{pred}}, B_{\text{gt}}) = \frac{\text{Area}(B_{\text{pred}} \cap B_{\text{gt}})}{\text{Area}(B_{\text{pred}} \cup B_{\text{gt}})} \]
+        </div>
+
+        <h3>3. Frequently Asked Viva / Examination Questions & Model Answers</h3>
+
+        <div class="viva-card">
+          <div class="viva-q"><span>Q1:</span> Why convert the RGB image to Grayscale before running Canny edge detection?</div>
+          <div class="viva-a">
+            Color information adds 3 redundant spatial channels (\(R, G, B\)). Edges correspond to high-frequency spatial discontinuities in luminance. Converting to grayscale with luminance weights (\(0.299R + 0.587G + 0.114B\)) preserves human visual perception while reducing computational complexity by 66%.
+          </div>
+        </div>
+
+        <div class="viva-card">
+          <div class="viva-q"><span>Q2:</span> What are the 5 core stages of the Canny Edge Detection algorithm?</div>
+          <div class="viva-a">
+            1. Gaussian Blur (noise suppression), 2. Sobel Gradient Magnitude and Direction Calculation, 3. Non-Maximum Suppression (edge thinning), 4. Double Thresholding (identifying strong, weak, and non-edge pixels), and 5. Edge Tracking by Hysteresis (suppressing weak edges not connected to strong ones).
+          </div>
+        </div>
+
+        <div class="viva-card">
+          <div class="viva-q"><span>Q3:</span> How does Otsu's thresholding method determine the optimal binarization threshold?</div>
+          <div class="viva-a">
+            Otsu's algorithm exhaustively iterates through all 256 grayscale levels to find the threshold \( T^* \) that maximizes between-class variance:
+            \( \sigma_B^2(T) = w_0(T) w_1(T) [\mu_0(T) - \mu_1(T)]^2 \), which equivalently minimizes intra-class variance without requiring manual heuristic tuning.
+          </div>
+        </div>
+
+        <div class="viva-card">
+          <div class="viva-q"><span>Q4:</span> How does the Spill Hazard detection prevent false alarms?</div>
+          <div class="viva-a">
+            It specifically pairs classes categorized as liquids (cup, mug, bottle) with sensitive electronics (laptop, keyboard, mouse) and applies a minimum Euclidean distance threshold (\( d < 110\text{px} \)). Items outside the danger zone or two tech items placed next to each other do not trigger the spill warning.
+          </div>
+        </div>
+
+        <div class="viva-card">
+          <div class="viva-q"><span>Q5:</span> Why use the HSV color space for beverage detection instead of RGB?</div>
+          <div class="viva-a">
+            In RGB, color chromaticity and luminance intensity are tightly coupled. Under changing workspace lighting or shadow, RGB pixel values shift dramatically. In HSV, Hue (\(H\)) represents pure color wavelength independent of illumination Value (\(V\)) and Saturation (\(S\)), making color segmentation robust against lighting variations.
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ================= Upload Modal ================= -->
+  <div id="upload-modal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 style="font-size:1.1rem; color:#fff;">Upload Image or Video</h3>
+        <button id="btn-close-upload" class="btn" style="padding:0.3rem 0.6rem;">&times;</button>
+      </div>
+      <div id="drop-zone" class="drop-zone">
+        <i data-lucide="cloud-upload" style="width:48px; height:48px; color:var(--primary); margin-bottom:0.75rem;"></i>
+        <p style="font-weight:600; margin-bottom:0.3rem;">Drag & drop desk photo or video here</p>
+        <p style="font-size:0.78rem; color:var(--text-muted); margin-bottom:1rem;">Supports PNG, JPG, WEBP, MP4</p>
+        <input type="file" id="file-upload" accept="image/*,video/*" style="display:none;">
+        <button class="btn btn-primary" onclick="document.getElementById('file-upload').click();">Browse Files</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/audioAlert.js"></script>
+  <script src="js/imageProcessor.js"></script>
+  <script src="js/deskAnalytics.js"></script>
+  <script src="js/detector.js"></script>
+  <script src="js/sampleScenarios.js"></script>
+  <script src="js/app.js"></script>
+  
+  <script>
+    // Initialize Lucide icons
+    if (window.lucide) {
+      window.lucide.createIcons();
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "name": "smart-desk-cvip",
+  "version": "2.0.0",
+  "description": "Smart Desk Object Detection and Monitoring System for CVIP",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "cvip",
+    "computer-vision",
+    "object-detection",
+    "smart-desk",
+    "image-processing",
+    "yolo",
+    "tensorflow"
+  ],
+  "author": "Bhargavi Reddy",
+  "license": "MIT"
+}
