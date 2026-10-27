@@ -450,7 +450,13 @@ class SmartDeskApp {
 
           this.currentDetections = detections;
           this.processDetectionFrame(img, detections);
-          window.deskAnalytics.addLog('info', `Custom image analyzed: ${file.name} (${detections.length} objects detected)`);
+          
+          if (detections.length > 0) {
+            window.deskAnalytics.addLog('info', `Custom image analyzed: ${file.name} (${detections.length} objects detected)`);
+          } else {
+            window.deskAnalytics.addLog('info', `Image loaded: ${file.name} (0 objects detected at current ${Math.round(window.smartDeskDetector.confidenceThreshold * 100)}% threshold. Try lowering the slider below).`);
+          }
+          if (fileInput) fileInput.value = '';
         };
         img.src = e.target.result;
       };

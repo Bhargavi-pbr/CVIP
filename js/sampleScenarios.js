@@ -19,6 +19,9 @@ class DeskScenarioGenerator {
     const w = this.canvas.width;
     const h = this.canvas.height;
 
+    // Reset canvas before rendering new scenario
+    ctx.clearRect(0, 0, w, h);
+
     if (theme === 'wood') {
       const grad = ctx.createLinearGradient(0, 0, 0, h);
       grad.addColorStop(0, '#2d1b11');

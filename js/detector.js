@@ -3,6 +3,7 @@
  * Object Detection Engine
  * Integrates TensorFlow.js COCO-SSD model with robust status handling
  * Renders verified COCO bounding boxes, edge-to-edge hazard proximity lines, and zoning grids
+ * Note: Never calls clearRect on background, ensuring custom images, videos, and preset desks stay fully visible!
  * ============================================================================
  */
 
@@ -60,7 +61,6 @@ class SmartDeskDetector {
     if (this.model && this.isModelReady) {
       try {
         const rawDetections = await this.model.detect(sourceElement);
-        // Filter by user confidence threshold and supported workspace classes
         return rawDetections.filter(d => 
           d.score >= this.confidenceThreshold && 
           this.supportedClasses.has(d.class.toLowerCase())
@@ -74,41 +74,41 @@ class SmartDeskDetector {
 
   /**
    * Render Bounding Boxes, Proximity Hazard Vectors, and Zones on Canvas
+   * Note: Does NOT call clearRect, preserving the background image/video/preset desk!
    */
   renderAnnotations(ctx, detections, width, height, hazards = []) {
-    ctx.clearRect(0, 0, width, height);
+    const scaleFactor = Math.max(1, Math.min(width, height) / 720);
 
     // 1. Draw Desk Zones (if enabled)
     if (this.showZones) {
-      this.drawDeskZones(ctx, width, height);
+      this.drawDeskZones(ctx, width, height, scaleFactor);
     }
 
     // 2. Draw Spill Hazard Proximity Lines
     if (this.showHazardLines && hazards.length > 0) {
-      this.drawHazardLines(ctx, hazards);
+      this.drawHazardLines(ctx, hazards, scaleFactor);
     }
 
     // 3. Draw Bounding Boxes
     detections.forEach(det => {
-      this.drawBoundingBox(ctx, det);
+      this.drawBoundingBox(ctx, det, scaleFactor);
     });
   }
 
   // Render Virtual Desk Zones
-  drawDeskZones(ctx, width, height) {
-    // Primary Work Zone (Center)
+  drawDeskZones(ctx, width, height, scaleFactor = 1) {
     ctx.save();
     ctx.strokeStyle = 'rgba(6, 182, 212, 0.45)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([6, 6]);
+    ctx.lineWidth = 2 * scaleFactor;
+    ctx.setLineDash([6 * scaleFactor, 6 * scaleFactor]);
     ctx.fillStyle = 'rgba(6, 182, 212, 0.04)';
     const wz = { x: width * 0.2, y: height * 0.25, w: width * 0.6, h: height * 0.65 };
     ctx.fillRect(wz.x, wz.y, wz.w, wz.h);
     ctx.strokeRect(wz.x, wz.y, wz.w, wz.h);
 
     ctx.fillStyle = 'rgba(6, 182, 212, 0.85)';
-    ctx.font = 'bold 11px sans-serif';
-    ctx.fillText('PRIMARY WORK ZONE', wz.x + 10, wz.y + 18);
+    ctx.font = `bold ${Math.round(11 * scaleFactor)}px sans-serif`;
+    ctx.fillText('PRIMARY WORK ZONE', wz.x + 10 * scaleFactor, wz.y + 18 * scaleFactor);
 
     // Safe Beverage Zone (Right Edge)
     ctx.strokeStyle = 'rgba(16, 185, 129, 0.45)';
@@ -118,18 +118,18 @@ class SmartDeskDetector {
     ctx.strokeRect(bz.x, bz.y, bz.w, bz.h);
 
     ctx.fillStyle = 'rgba(16, 185, 129, 0.85)';
-    ctx.fillText('SAFE DRINK ZONE', bz.x + 8, bz.y + 18);
+    ctx.fillText('SAFE DRINK ZONE', bz.x + 8 * scaleFactor, bz.y + 18 * scaleFactor);
     ctx.restore();
   }
 
   // Render Laser Proximity Hazard Lines (Edge-to-Edge Distance)
-  drawHazardLines(ctx, hazards) {
+  drawHazardLines(ctx, hazards, scaleFactor = 1) {
     ctx.save();
     hazards.forEach(h => {
       const isCritical = h.level === 'CRITICAL';
       ctx.strokeStyle = isCritical ? 'rgba(244, 63, 94, 0.95)' : 'rgba(245, 158, 11, 0.85)';
-      ctx.lineWidth = isCritical ? 3 : 2;
-      ctx.setLineDash(isCritical ? [] : [5, 5]);
+      ctx.lineWidth = (isCritical ? 3 : 2) * scaleFactor;
+      ctx.setLineDash(isCritical ? [] : [5 * scaleFactor, 5 * scaleFactor]);
 
       // Connect liquid center to tech center
       ctx.beginPath();
@@ -142,14 +142,15 @@ class SmartDeskDetector {
       const midY = (h.liquid.center.y + h.tech.center.y) / 2;
 
       const badgeText = h.edgeDist === 0 ? 'OVERLAP' : `${h.edgeDist}px edge`;
-      ctx.font = 'bold 10px sans-serif';
+      const fontSize = Math.round(10 * scaleFactor);
+      ctx.font = `bold ${fontSize}px sans-serif`;
       const textWidth = ctx.measureText(badgeText).width;
-      const pillW = textWidth + 14;
-      const pillH = 20;
+      const pillW = textWidth + 14 * scaleFactor;
+      const pillH = 20 * scaleFactor;
 
       ctx.fillStyle = isCritical ? '#f43f5e' : '#f59e0b';
       ctx.beginPath();
-      ctx.roundRect(midX - pillW / 2, midY - pillH / 2, pillW, pillH, 10);
+      ctx.roundRect(midX - pillW / 2, midY - pillH / 2, pillW, pillH, 10 * scaleFactor);
       ctx.fill();
 
       ctx.fillStyle = '#ffffff';
@@ -160,7 +161,7 @@ class SmartDeskDetector {
       // Warning circle around tech if critical
       if (isCritical) {
         ctx.strokeStyle = 'rgba(244, 63, 94, 0.6)';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 2 * scaleFactor;
         ctx.beginPath();
         const [tx, ty, tw, th] = h.tech.bbox;
         ctx.arc(tx + tw / 2, ty + th / 2, Math.max(tw, th) * 0.65, 0, Math.PI * 2);
@@ -171,7 +172,7 @@ class SmartDeskDetector {
   }
 
   // Render Single Bounding Box with Badge
-  drawBoundingBox(ctx, det) {
+  drawBoundingBox(ctx, det, scaleFactor = 1) {
     const [x, y, w, h] = det.bbox;
     const cat = window.deskAnalytics ? window.deskAnalytics.categorize(det.class) : 'productive';
 
@@ -195,16 +196,16 @@ class SmartDeskDetector {
     ctx.save();
     // Bounding Box Rect
     ctx.strokeStyle = strokeColor;
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth = Math.max(2, 2.5 * scaleFactor);
     ctx.fillStyle = bgColor;
     ctx.beginPath();
-    ctx.roundRect(x, y, w, h, 6);
+    ctx.roundRect(x, y, w, h, 6 * scaleFactor);
     ctx.fill();
     ctx.stroke();
 
     // Corner brackets
-    const bracketLen = Math.min(16, Math.min(w, h) * 0.3);
-    ctx.lineWidth = 3.5;
+    const bracketLen = Math.min(16 * scaleFactor, Math.min(w, h) * 0.3);
+    ctx.lineWidth = Math.max(3, 3.5 * scaleFactor);
     // Top-left
     ctx.beginPath();
     ctx.moveTo(x, y + bracketLen);
@@ -232,21 +233,22 @@ class SmartDeskDetector {
 
     // Label Badge
     const labelText = `${det.class.toUpperCase()} ${Math.round(det.score * 100)}%`;
-    ctx.font = 'bold 11px sans-serif';
+    const fontSize = Math.round(11 * scaleFactor);
+    ctx.font = `bold ${fontSize}px sans-serif`;
     const textMetrics = ctx.measureText(labelText);
-    const badgeW = textMetrics.width + 14;
-    const badgeH = 20;
-    const badgeY = Math.max(0, y - badgeH - 3);
+    const badgeW = textMetrics.width + 14 * scaleFactor;
+    const badgeH = 20 * scaleFactor;
+    const badgeY = Math.max(0, y - badgeH - 3 * scaleFactor);
 
     ctx.fillStyle = strokeColor;
     ctx.beginPath();
-    ctx.roundRect(x, badgeY, badgeW, badgeH, 4);
+    ctx.roundRect(x, badgeY, badgeW, badgeH, 4 * scaleFactor);
     ctx.fill();
 
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(labelText, x + 7, badgeY + badgeH / 2);
+    ctx.fillText(labelText, x + 7 * scaleFactor, badgeY + badgeH / 2);
 
     ctx.restore();
   }
