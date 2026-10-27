@@ -1,49 +1,73 @@
 # Smart Desk Object Detection and Monitoring System
-### Computer Vision and Image Processing (CVIP) Final Project
+### Computer Vision and Image Processing (CVIP) Final Project (Validated & Refined)
 
-An intelligent, real-time Computer Vision and Workspace Analytics system designed to monitor study desks, optimize productivity, and prevent hardware accidents. Built using modern client-side Computer Vision (TensorFlow.js COCO-SSD with WebGL acceleration), classical digital image processing pipelines (Canny, Sobel, Otsu, Gaussian), and Python OpenCV / YOLOv8 suites.
+An intelligent, real-time Computer Vision and Workspace Analytics system designed to monitor study desks, optimize productivity, and prevent hardware accidents. Built using client-side Computer Vision (TensorFlow.js COCO-SSD with WebGL acceleration), classical digital image processing pipelines (Canny, Sobel, Otsu, Gaussian with edge-clamping), and Python OpenCV / YOLOv8 suites.
 
 ---
 
 ## 📌 Project Overview
-Modern workspaces are prone to clutter, study distractions (e.g. smartphones), poor ergonomic posture, and high-risk accidents such as liquid spills over expensive electronics (laptops, mechanical keyboards). 
+Modern workspaces are prone to clutter, study distractions (smartphones placed in active work areas), poor screen proximity, and high-risk accidents such as liquid spills over electronics (laptops, keyboards). 
 
 This project delivers a dual-architecture solution:
-1. **Interactive Full-Stack Web Application**: A web-based vision dashboard supporting live webcam monitoring, image/video upload, preset test scenarios, interactive CVIP pipeline breakdown, real-time charts, audio alarms, and PDF audit reports.
-2. **Academic Python Suite**: Standalone OpenCV and Ultralytics YOLOv8 scripts ready for local workstation or Google Colab evaluation.
+1. **Interactive Full-Stack Web Application**: A web-based vision dashboard supporting live webcam monitoring, image and video file upload with continuous frame detection, preset benchmark test scenarios, an interactive CVIP pipeline breakdown studio, telemetry charts, audio alarms with debounce cooldown, and PDF audit reports.
+2. **Academic Python Suite**: Standalone OpenCV and Ultralytics YOLOv8 scripts ready for local workstation or Google Colab evaluation with identical formulas.
 
 ---
 
-## 🚀 Key Features
+## 🎯 Verified Capabilities & Model Classes
+
+> **Academic Transparency Note:**  
+> The system utilizes standard **COCO dataset (80-class)** weights (COCO-SSD MobileNetV2 and YOLOv8n). Unverified claims of detecting custom stationery (such as notebooks, pens, or pencils) have been intentionally omitted as they are not part of standard COCO classes and would require custom annotated dataset training.
+
+### Supported COCO Target Classes:
+* **Study & Work Tools:** `laptop`, `keyboard`, `mouse`, `book`, `scissors`
+* **Consumables / Spill Risks:** `cup`, `bottle`, `wine glass`, `bowl`
+* **Distraction Hazards:** `cell phone`, `remote`
+* **User Presence:** `person`
+
+---
+
+## 🚀 Key Features & Methodologies
 
 | Feature | Description | CVIP Method / Formula |
 | :--- | :--- | :--- |
-| **Object Detection & Classification** | Detects laptops, books, smartphones, cups, mice, keyboards, scissors, and humans in real-time. | Single Shot MultiBox Detector (MobileNetV2 / YOLOv8) |
-| **Spill Hazard Warning Engine** | Computes Euclidean distance between liquid containers (cup, bottle) and electronics (laptop, keyboard). Triggers audio-visual alarm if distance < 110px. | $d = \sqrt{(x_{\text{liq}} - x_{\text{tech}})^2 + (y_{\text{liq}} - y_{\text{tech}})^2}$ |
-| **Desk Clutter Index (DCI)** | Computes real-time clutter rating ($0-100\%$, Clean / Moderate / Messy) using object counts, bounding box surface coverage, and edge density. | $\text{DCI} = w_1 \frac{N}{N_{\max}} + w_2 \frac{\text{Area}_{\text{occ}}}{\text{Area}_{\text{desk}}} + w_3 E_{\text{density}}$ |
-| **Distraction & Study Focus Tracker** | Flags smartphone presence in active work zones, tracking focus score and distracted time. | Spatial intersection & classification tracking |
-| **CVIP Pipeline Studio** | Interactive 8-step visualizer for Grayscale, Gaussian Blur, Sobel derivatives, Canny Edges, Otsu Binarization, and HSV masks. | Classical Image Processing convolution & morphology |
-| **Ergonomics & Screen Distance** | Evaluates posture and leaning distance based on person bounding box aspect ratio and scale. | Geometric bounding box ratio analysis |
-| **Audit Report & CSV Export** | Generates print/PDF-ready evaluation reports with annotated frame captures and downloadable CSV telemetry logs. | Automated DOM snapshot & CSV stream generation |
+| **Object Detection & Classification** | Real-time localization of verified COCO classes in webcam, uploaded images, and uploaded video streams. | Single Shot MultiBox Detector (MobileNetV2 / YOLOv8) |
+| **Edge-to-Edge Spill Hazard Detector** | Computes true bounding box edge separation normalized by frame diagonal, preventing resolution bias and center-distance errors. | $d_{\text{edge}} = \sqrt{\Delta x^2 + \Delta y^2}, \quad d_{\text{norm}} = \frac{d_{\text{edge}}}{\sqrt{W^2 + H^2}}$ |
+| **Standardized Desk Clutter Index (DCI)** | Project-defined heuristic score ($0-100\%$, Clean / Moderate / Messy) identical in JavaScript and Python. | $\text{DCI} = 0.35 \frac{N}{8} + 0.40 \frac{\text{Area}_{\text{occ}}}{0.75 \text{Area}_{\text{desk}}} + 0.25 E_{\text{density}}$ |
+| **Phone-Based Distraction Estimator** | Spatial zoning check: flags when a smartphone intersects the defined Primary Work Zone during an active session. | 2D bounding box intersection with Work Zone |
+| **User Screen Proximity Estimation** | Estimates whether user is sitting at normal distance or leaning too close to display using 2D box area/height occupancy. | Bounding box scale & aspect ratio proxy |
+| **Border-Safe Gaussian Smoothing** | 5x5 kernel convolution with coordinate clamping (edge replication) to eliminate dark border artifacts. | $G_\sigma(x, y) * I(x, y)$ with $\text{clamp}(x, 0, W-1)$ |
+| **Video File Frame Processor** | Loads MP4/WEBM video files, offering play/pause controls and continuous frame-by-frame object inference. | HTML5 Video + `requestAnimationFrame` inference loop |
+| **Audit Report & CSV Export** | Generates printable PDF-ready evaluation reports with annotated frame captures and downloadable CSV telemetry logs. | Automated DOM snapshot & CSV stream generation |
 
 ---
 
 ## 🧮 Mathematical Formulations
 
-### 1. Luminance Grayscale Conversion (ITU-R BT.601)
+### 1. Standardized Desk Clutter Index (DCI)
+A project-defined heuristic index designed for relative workspace clutter assessment:
+$$\text{DCI} = \min\left(100, \; 100 \times \left[ 0.35 \cdot \min\left(\frac{N}{8}, 1\right) + 0.40 \cdot \frac{\sum_{i=1}^N \text{Area}(B_i)}{0.75 \cdot \text{Area}_{\text{desk}}} + 0.25 \cdot E_{\text{density}} \right]\right)$$
+* **$0 - 35\%$**: Clean
+* **$36 - 65\%$**: Moderate
+* **$66 - 100\%$**: High Clutter / Messy
+
+### 2. Edge-to-Edge Normalized Spill Hazard Metric
+Measures true separation between bounding box rectangles $A$ (liquid) and $B$ (tech):
+$$\Delta x = \max\left(0, \; \max(x_{1A}, x_{1B}) - \min(x_{2A}, x_{2B})\right)$$
+$$\Delta y = \max\left(0, \; \max(y_{1A}, y_{1B}) - \min(y_{2A}, y_{2B})\right)$$
+$$d_{\text{edge}} = \sqrt{\Delta x^2 + \Delta y^2}, \quad d_{\text{norm}} = \frac{d_{\text{edge}}}{\sqrt{W^2 + H^2}}$$
+* **Critical Hazard Alert:** $d_{\text{edge}} = 0$ (touching/intersecting) OR $d_{\text{norm}} < 0.05$ (within $5\%$ of frame diagonal).
+* **Caution Warning:** $d_{\text{norm}} < 0.12$ (within $12\%$ of frame diagonal).
+* **Safe:** $d_{\text{norm}} \ge 0.12$.
+
+*(Note: Pixel distance is an image-plane proxy metric; physical metric distance in cm requires camera intrinsic calibration).*
+
+### 3. Luminance Grayscale Conversion (ITU-R BT.601)
 $$Y = 0.299 \cdot R + 0.587 \cdot G + 0.114 \cdot B$$
 
-### 2. 2D Gaussian Kernel Smoothing
+### 4. Gaussian Kernel Smoothing with Edge Replication
 $$G_\sigma(x, y) = \frac{1}{2\pi\sigma^2} \exp\left(-\frac{x^2 + y^2}{2\sigma^2}\right)$$
-
-### 3. Spatial Gradient Magnitude (Sobel Operators)
-$$|\nabla I| = \sqrt{G_x^2 + G_y^2}, \quad \theta = \arctan2(G_y, G_x)$$
-
-### 4. Otsu's Optimal Between-Class Variance Threshold
-$$T^* = \arg\max_T \sigma_B^2(T) = \arg\max_T \left[ w_0(T) w_1(T) (\mu_0(T) - \mu_1(T))^2 \right]$$
-
-### 5. Intersection over Union (IoU)
-$$\text{IoU}(B_{\text{pred}}, B_{\text{gt}}) = \frac{\text{Area}(B_{\text{pred}} \cap B_{\text{gt}})}{\text{Area}(B_{\text{pred}} \cup B_{\text{gt}})}$$
+Coordinates outside image boundaries $[0, W-1] \times [0, H-1]$ are clamped to the nearest edge pixel, eliminating artificial dark border artifacts.
 
 ---
 
@@ -55,72 +79,57 @@ CVIP/
 ├── css/
 │   └── styles.css                 # Dark glassmorphism futuristic styling
 ├── js/
-│   ├── app.js                     # Application controller, charts, and loop
+│   ├── app.js                     # Application controller, video loop, charts
 │   ├── detector.js                # COCO-SSD detection & visual annotation engine
-│   ├── imageProcessor.js          # Classical CVIP algorithms in pure JavaScript
-│   ├── deskAnalytics.js           # DCI, Spill Hazard, and Focus scoring engine
-│   ├── sampleScenarios.js         # Realistic synthetic desk test generators
-│   └── audioAlert.js              # Web Audio API synthetic alarm & tone generator
+│   ├── imageProcessor.js          # Canny, Sobel, Otsu, Gaussian with edge clamping
+│   ├── deskAnalytics.js           # Standardized DCI, Edge Proximity, Distraction
+│   ├── sampleScenarios.js         # Verified benchmark preset desk generators
+│   └── audioAlert.js              # Web Audio API alarm with cooldown debounce
 ├── server.js                      # Zero-dependency local Node.js HTTP server
 ├── start_website.bat              # 1-Click Windows Launcher
 ├── start_website.ps1              # 1-Click PowerShell Launcher
 ├── package.json                   # Project metadata
 ├── cvip_python_scripts/           # Academic Python CVIP Codebase
 │   ├── smart_desk_yolo.py         # OpenCV + YOLOv8 real-time detection script
-│   ├── image_processing_pipeline.py # Grayscale, Gaussian, Sobel, Canny, Otsu visualizer
-│   ├── spill_proximity_checker.py # Euclidean proximity & hazard threshold tester
+│   ├── image_processing_pipeline.py # Classical CVIP Matplotlib visualizer
+│   ├── spill_proximity_checker.py # Edge-to-edge proximity & hazard tester
 │   ├── Smart_Desk_CVIP_Colab.ipynb # Google Colab Ready Jupyter Notebook
 │   └── requirements.txt           # Python library requirements
 ├── README.md                      # Comprehensive project documentation
-└── VIVA_QUESTIONS.md              # Top 25 Viva Examination Questions & Answers
+└── VIVA_QUESTIONS.md              # 25 Viva Examination Questions & Answers
 ```
 
 ---
 
 ## 💻 Quick Start: Running the Website
 
-### Option 1: 1-Click Launcher (Recommended for Windows)
-Simply **double-click** `start_website.bat`.
-- It automatically starts the local HTTP server and opens your default browser at `http://localhost:3000`.
+### Option 1: 1-Click Windows Launcher
+Double-click **`start_website.bat`**. It starts the local HTTP server and automatically opens `http://localhost:3000` in your default browser.
 
 ### Option 2: Using Node.js
-In your terminal, navigate to the project directory and run:
 ```bash
 node server.js
 ```
-Then open [http://localhost:3000](http://localhost:3000) in Chrome, Edge, or Firefox.
+Then visit [http://localhost:3000](http://localhost:3000).
 
 ### Option 3: Direct Browser Launch
-Double-click `index.html` to open it directly in any modern web browser.
+Double-click `index.html` to open it directly in Chrome, Edge, or Firefox.
 
 ---
 
 ## 🐍 Running the Python CVIP Scripts
 
-### Local Workstation:
 1. Navigate to the `cvip_python_scripts` directory:
    ```bash
    cd cvip_python_scripts
-   ```
-2. Install dependencies:
-   ```bash
    pip install -r requirements.txt
    ```
-3. Run the YOLOv8 Smart Desk Monitor:
+2. Run the YOLOv8 Smart Desk Monitor:
    ```bash
    python smart_desk_yolo.py
    ```
-4. Run the Image Processing Pipeline Visualizer:
+3. Run the Image Processing Pipeline Visualizer:
    ```bash
    python image_processing_pipeline.py
    ```
-
-### Google Colab:
-1. Open [Google Colab](https://colab.research.google.com).
-2. Upload `cvip_python_scripts/Smart_Desk_CVIP_Colab.ipynb`.
-3. Select **Runtime > Run All** for single-click execution with free GPU!
-
----
-
-## 🎓 Academic Evaluation & Defense
-For viva examination and project defense questions, consult `VIVA_QUESTIONS.md`, which contains 25 detailed questions and answers covering Object Detection architectures, Canny edge detection, Otsu thresholding, IoU, and hazard proximity algorithms.
+4. Or open **`Smart_Desk_CVIP_Colab.ipynb`** in [Google Colab](https://colab.research.google.com) for 1-click execution with free GPU!

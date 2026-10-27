@@ -1,6 +1,7 @@
 /**
  * Audio Alert Synthesizer for Smart Desk Monitoring
  * Uses Web Audio API for zero-dependency sound notifications
+ * Features an intelligent cooldown/debounce mechanism to prevent audio spam
  */
 
 class AudioAlertSystem {
@@ -8,6 +9,9 @@ class AudioAlertSystem {
     this.audioCtx = null;
     this.isMuted = false;
     this.lastHazardBeep = 0;
+    this.lastDistractionBeep = 0;
+    this.cooldownMs = 3500; // 3.5 seconds cooldown between audio warnings
+    this.inHazardState = false;
   }
 
   init() {
@@ -27,12 +31,14 @@ class AudioAlertSystem {
     return this.isMuted;
   }
 
-  // High urgency dual-tone frequency beep for spill hazard or critical alert
-  playHazardAlarm() {
+  /**
+   * High urgency dual-tone frequency beep for spill hazard
+   * Features debounce/cooldown mechanism
+   */
+  playHazardAlarm(force = false) {
     if (this.isMuted) return;
     const now = Date.now();
-    // Throttle alert sounds to at most once every 1.5 seconds
-    if (now - this.lastHazardBeep < 1500) return;
+    if (!force && (now - this.lastHazardBeep < this.cooldownMs)) return;
     this.lastHazardBeep = now;
 
     this.init();
@@ -63,9 +69,15 @@ class AudioAlertSystem {
     }
   }
 
-  // Soft warning chime for distraction (phone detected)
+  /**
+   * Warning chime for distraction (phone in work zone)
+   */
   playDistractionWarning() {
     if (this.isMuted) return;
+    const now = Date.now();
+    if (now - this.lastDistractionBeep < this.cooldownMs) return;
+    this.lastDistractionBeep = now;
+
     this.init();
     if (!this.audioCtx) return;
 
@@ -91,7 +103,9 @@ class AudioAlertSystem {
     }
   }
 
-  // Pleasant notification chime for snapshot / status change
+  /**
+   * Pleasant notification chime for snapshot / status change
+   */
   playChime() {
     if (this.isMuted) return;
     this.init();

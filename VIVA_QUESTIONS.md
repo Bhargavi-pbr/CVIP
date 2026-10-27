@@ -1,10 +1,10 @@
 # Smart Desk CVIP System - Viva & Project Defense Guide
-### 25 Core Examination Questions & Model Answers
+### 25 Core Examination Questions & Model Answers (Validated & Refined)
 
 ---
 
 ### Q1: What is the core objective of the Smart Desk Monitoring System?
-**Answer:** The system monitors workspace environments in real-time to analyze object distributions, compute a Desk Clutter Index (DCI), prevent liquid spill hazards on electronics, detect study distractions (such as smartphones in the focus zone), and evaluate ergonomic posture.
+**Answer:** The system monitors workspace environments in real-time to analyze object distributions, compute a Desk Clutter Index (DCI), prevent liquid spill hazards on electronics using edge-to-edge bounding box separation, estimate phone-based study distractions within the primary work zone, and assess user screen proximity.
 
 ---
 
@@ -15,102 +15,98 @@ Grayscale conversion eliminates color redundancy, reduces memory consumption and
 
 ---
 
-### Q3: Explain the 5 fundamental steps of the Canny Edge Detection algorithm.
+### Q3: How did you fix the artificial dark border problem in Gaussian smoothing?
+**Answer:** Standard convolution kernels cannot center over boundary pixels without exceeding array boundaries ($x < 2$ or $x \ge W - 2$). Initializing the output array with zeros creates an artificial dark border around the frame. We solved this by implementing **boundary coordinate replication (clamping)**: mapping out-of-bound indices to the nearest valid edge pixel ($\text{clamp}(y + ky, 0, H-1)$ and $\text{clamp}(x + kx, 0, W-1)$). This maintains natural intensity across all borders.
+
+---
+
+### Q4: Explain the 5 fundamental steps of the Canny Edge Detection algorithm.
 **Answer:**
-1. **Gaussian Smoothing:** Convolves the image with a 2D Gaussian kernel to suppress high-frequency noise.
+1. **Gaussian Smoothing:** Convolves the image with a 2D Gaussian kernel using edge replication to suppress high-frequency noise.
 2. **Gradient Calculation:** Applies Sobel kernels to calculate spatial derivatives $G_x$ and $G_y$, gradient magnitude $|\nabla I| = \sqrt{G_x^2 + G_y^2}$, and direction $\theta = \arctan2(G_y, G_x)$.
-3. **Non-Maximum Suppression (NMS):** Thins edge ridges to 1-pixel width by checking if the pixel is a local maximum along the gradient direction.
+3. **Non-Maximum Suppression (NMS):** Thins edge ridges to 1-pixel width by checking if the pixel is a local maximum along the gradient normal.
 4. **Double Thresholding:** Categorizes pixels into strong ($> T_{\text{high}}$), weak ($T_{\text{low}} \le v \le T_{\text{high}}$), and non-edges ($< T_{\text{low}}$).
 5. **Hysteresis Tracking:** Preserves weak edge pixels only if they are 8-connected to a strong edge pixel.
 
 ---
 
-### Q4: How does Otsu's binarization algorithm determine the optimal threshold?
+### Q5: How does Otsu's binarization algorithm determine the optimal threshold?
 **Answer:** Otsu's method exhaustively evaluates all 256 possible gray levels to find the threshold $T^*$ that maximizes the between-class variance $\sigma_B^2(T)$:
 $$\sigma_B^2(T) = w_0(T) w_1(T) [\mu_0(T) - \mu_1(T)]^2$$
 Where $w_0, w_1$ are the probabilities of the background and foreground classes, and $\mu_0, \mu_1$ are their class means. Maximizing between-class variance mathematically minimizes within-class variance.
 
 ---
 
-### Q5: How is the Desk Clutter Index (DCI) mathematically defined?
-**Answer:** DCI combines three weighted factors:
-$$\text{DCI} = \min\left(100, \; 100 \times \left[ w_1 \cdot \min\left(\frac{N}{N_{\max}}, 1\right) + w_2 \cdot \frac{\text{Occupied Area}}{\text{Desk Area}} + w_3 \cdot E_{\text{density}} \right]\right)$$
-Where $w_1 = 0.35$ (object count), $w_2 = 0.40$ (surface area occupancy ratio), and $w_3 = 0.25$ (high-frequency Canny edge density). A score $< 35\%$ is Clean, $35-65\%$ is Moderate, and $> 65\%$ is Messy.
+### Q6: How is the Desk Clutter Index (DCI) mathematically defined, and is it a standardized metric?
+**Answer:** DCI is a project-defined heuristic index designed for relative workspace clutter assessment, standardized identically across our JavaScript and Python codebases:
+$$\text{DCI} = \min\left(100, \; 100 \times \left[ 0.35 \cdot \min\left(\frac{N}{8}, 1\right) + 0.40 \cdot \frac{\sum_{i=1}^N \text{Area}(B_i)}{0.75 \cdot \text{Area}_{\text{desk}}} + 0.25 \cdot E_{\text{density}} \right]\right)$$
+Where $0.35$ weights object count, $0.40$ weights surface area occupancy ratio, and $0.25$ weights high-frequency Canny edge density.
 
 ---
 
-### Q6: How does the Spill Hazard detection algorithm work?
-**Answer:** The algorithm extracts the bounding box centers $(x_c, y_c)$ of detected liquid containers (classes: `cup`, `bottle`, `wine glass`) and sensitive electronics (classes: `laptop`, `keyboard`, `mouse`). It computes the 2D Euclidean distance:
-$$d = \sqrt{(x_{\text{liquid}} - x_{\text{tech}})^2 + (y_{\text{liquid}} - y_{\text{tech}})^2}$$
-If $d < 110\text{px}$, a CRITICAL HAZARD alert is triggered, drawing a pulsing red laser vector and activating an auditory alarm via Web Audio API.
+### Q7: Why use edge-to-edge bounding box distance instead of center-to-center distance for spill hazards?
+**Answer:** Center-to-center distance is misleading when objects differ significantly in size. A cup could physically touch or spill onto a 15-inch laptop keyboard edge while their centers are still 250px apart. Bounding-box edge separation measures the true minimum gap between outer rectangle boundaries ($\Delta x, \Delta y$), correctly detecting collision or proximity ($d_{\text{edge}} = 0$) regardless of object scale.
 
 ---
 
-### Q7: What is Intersection over Union (IoU), and why is it used in object detection?
-**Answer:** IoU measures the spatial overlap between a predicted bounding box $B_p$ and a ground-truth box $B_{gt}$:
-$$\text{IoU} = \frac{\text{Area}(B_p \cap B_{gt})}{\text{Area}(B_p \cup B_{gt})}$$
-It is used during training and Non-Maximum Suppression (NMS) to eliminate duplicate overlapping bounding boxes for the same physical object.
+### Q8: Why normalize the spill hazard distance by the frame diagonal?
+**Answer:** Raw pixel distances change depending on camera resolution (e.g. 100px on a $640\times480$ frame represents a large area, but on a $1920\times1080$ frame it is very small). Normalizing by the diagonal $\sqrt{W^2 + H^2}$ ensures scale invariance across different resolutions and webcam aspect ratios.
 
 ---
 
-### Q8: What deep learning models are used in this project?
+### Q9: Which object classes are supported by your model, and why are notebooks and pens not claimed?
+**Answer:** The system uses standard pre-trained COCO weights (COCO-SSD and YOLOv8n) which support 80 standard classes, including: `laptop`, `keyboard`, `mouse`, `book`, `scissors`, `cup`, `bottle`, `wine glass`, `bowl`, `cell phone`, and `person`. Specific stationery like notebooks, pens, and pencils are not part of standard COCO classes. Rather than producing unverified or misleading classifications, our system strictly uses verified standard classes.
+
+---
+
+### Q10: How does the Phone-Based Distraction Estimator work, and how does it prevent false focus tracking?
+**Answer:** Rather than making unverified claims about mental concentration, the system checks whether a `cell phone` physically overlaps the user's defined **Primary Work Zone** ($[0.2W, 0.25H, 0.6W, 0.65H]$). Furthermore, if no user (`person`) is detected, the session is marked as "Inactive / Untracked" to prevent false accumulation of focus time when the desk is vacant.
+
+---
+
+### Q11: Why is posture monitoring described as "User Screen Proximity Estimation"?
+**Answer:** Clinical ergonomic posture assessment requires 3D skeletal keypoint tracking (e.g. cervical spine angles via MediaPipe Pose). Using a single 2D bounding box can misclassify an upright tall user as leaning forward. Renaming this feature to **"User Screen Proximity Estimation"** provides an honest and technically sound description of 2D bounding-box area occupancy and camera proximity.
+
+---
+
+### Q12: How does the system handle video file uploads?
+**Answer:** The application reads uploaded video files (MP4/WEBM) into an HTML5 `<video>` element via `URL.createObjectURL(file)`. An asynchronous `requestAnimationFrame` loop draws successive video frames to an offscreen canvas and runs the neural object detector on each frame, providing play/pause controls and continuous telemetry updates.
+
+---
+
+### Q13: What deep learning models are used in this project?
 **Answer:** 
-1. **In the Web Application:** TensorFlow.js COCO-SSD with MobileNetV2 backbone running client-side with WebGL hardware acceleration.
-2. **In the Python Suite:** Ultralytics YOLOv8 (nano variant, `yolov8n.pt`), which utilizes CSP-Darknet53 feature extraction with Path Aggregation Network (PANet) neck and anchor-free decoupled head.
+1. **Web Application:** TensorFlow.js COCO-SSD (MobileNetV2 backbone) executed client-side via WebGL shaders.
+2. **Python Suite:** Ultralytics YOLOv8 (nano variant, `yolov8n.pt`), an anchor-free single-stage detector with CSP-Darknet backbone and PANet neck.
 
 ---
 
-### Q9: Why is HSV preferred over RGB for color segmentation (e.g. coffee cup detection)?
-**Answer:** In the RGB color space, chromaticity (color information) and intensity (light level) are entangled across all three channels. Shadows and lighting changes drastically alter RGB values. In HSV, **Hue** ($H$) represents pure color wavelength, decoupled from **Saturation** ($S$) and **Value** ($V$, brightness). This makes color thresholding robust against lighting variations.
+### Q14: Why is HSV preferred over RGB for color segmentation (e.g. beverage cup detection)?
+**Answer:** In RGB, chromaticity (color wavelength) and luminance (brightness) are entangled across all 3 channels ($R, G, B$). In HSV, **Hue** ($H$) represents pure color wavelength independent of **Saturation** ($S$) and **Value** ($V$, brightness). This makes color thresholding robust against shadows and ambient room lighting changes.
 
 ---
 
-### Q10: How does the system handle distraction tracking?
-**Answer:** The system monitors the presence and location of `cell phone` objects relative to the defined active workspace. If a smartphone is detected in the central study zone during an active study session, the session focus score decreases and a distraction warning chime is played.
+### Q15: How does the audio alert system prevent annoying repeated sound spam?
+**Answer:** The `AudioAlertSystem` incorporates a 3.5-second debounce/cooldown mechanism. When a critical hazard or distraction state is detected, the alarm triggers and enters a cooldown window, preventing the sound from firing repeatedly on every single frame at 60 FPS.
 
 ---
 
-### Q11: What is the purpose of Gaussian smoothing before edge detection?
-**Answer:** Numerical spatial differentiation (like Sobel operators) acts as a high-pass filter that amplifies high-frequency noise. Convolving with a 2D Gaussian kernel acts as a low-pass filter, smoothing out pixel-level sensor noise so only genuine object boundaries produce strong gradient responses.
+### Q16: What is Non-Maximum Suppression (NMS) in object detection?
+**Answer:** During inference, object detectors generate multiple candidate bounding boxes for the same physical object. NMS sorts boxes by confidence score, selects the highest-scoring box, and suppresses all other overlapping boxes whose Intersection over Union (IoU) exceeds a set threshold (e.g. 0.45), leaving a single optimal bounding box.
 
 ---
 
-### Q12: What is Non-Maximum Suppression (NMS) in Canny edge detection?
-**Answer:** NMS ensures edge ridges are strictly 1-pixel wide. For every pixel, the gradient angle $\theta$ is quantized into 4 directions ($0^\circ, 45^\circ, 90^\circ, 135^\circ$). The pixel's gradient magnitude is compared with its two neighbors along that gradient normal. If its magnitude is not strictly greater than both neighbors, it is suppressed to 0.
-
----
-
-### Q13: What are morphological dilation and erosion?
+### Q17: What are morphological dilation and erosion?
 **Answer:**
-- **Dilation:** Computes the maximum pixel value under a structuring element ($B$). It expands white foreground boundaries and bridges small gaps in detected edges: $(A \oplus B)(x, y) = \max_{(i, j) \in B} A(x - i, y - j)$.
-- **Erosion:** Computes the minimum pixel value under $B$. It shrinks foreground boundaries and eliminates isolated single-pixel noise: $(A \ominus B)(x, y) = \min_{(i, j) \in B} A(x + i, y + j)$.
-
----
-
-### Q14: How does the system achieve real-time performance in the browser without server lag?
-**Answer:** By utilizing TensorFlow.js with the WebGL backend, model weights and tensor operations execute directly on the user's client GPU shaders. Video frames are captured via the HTML5 `canvas` and `requestAnimationFrame` loop, achieving 30-60 FPS without transferring raw video bytes over network sockets.
-
----
-
-### Q15: What happens if the browser is offline or the deep learning model CDN fails?
-**Answer:** The architecture incorporates an automatic graceful fallback to a built-in analytical heuristic vision engine. This engine extracts contours and colors using the native HTML5 Canvas Image Processing engine (`imageProcessor.js`), ensuring the application never crashes or hangs.
-
----
-
-### Q16: How does the system evaluate user ergonomics and posture?
-**Answer:** When the webcam detects a `person` object, it tracks the bounding box area ratio relative to the total frame area ($\frac{w \cdot h}{W_{\text{frame}} \cdot H_{\text{frame}}}$). If the ratio exceeds $0.65$ or relative height exceeds $0.90$, the user is leaning forward or sitting too close to the display, triggering an ergonomic posture alert.
-
----
-
-### Q17: What is mean Average Precision (mAP) in object detection?
-**Answer:** mAP is the standard evaluation metric for object detectors. It computes the area under the Precision-Recall curve (Average Precision) for each class at a specific IoU threshold (e.g. $\text{mAP}@0.5$), then averages this score across all target classes.
+- **Dilation:** $(A \oplus B)(x, y) = \max_{(i, j) \in B} A(x - i, y - j)$. Expands white foreground boundaries and bridges small breaks in detected edges.
+- **Erosion:** $(A \ominus B)(x, y) = \min_{(i, j) \in B} A(x + i, y + j)$. Shrinks foreground boundaries and removes isolated single-pixel noise.
 
 ---
 
 ### Q18: What is the difference between Anchor-based and Anchor-free object detection?
 **Answer:** 
-- **Anchor-based (e.g. YOLOv3/v4):** Predefined bounding box priors (anchors) of various scales and aspect ratios are tiled across the feature map; the model predicts offsets.
-- **Anchor-free (e.g. YOLOv8, CenterNet):** Directly predicts the center point of the object and distances from the center to the 4 bounding box edges, reducing hyperparameter complexity.
+- **Anchor-based (e.g. YOLOv3/v4):** Predefined anchor boxes of fixed aspect ratios are tiled across feature maps; the model predicts coordinate offsets.
+- **Anchor-free (e.g. YOLOv8):** Directly predicts the center point of the object and distances from the center to the 4 bounding box edges, reducing hyperparameter complexity.
 
 ---
 
@@ -135,14 +131,14 @@ $$G_y = \begin{bmatrix} -1 & -2 & -1 \\ 0 & 0 & 0 \\ 1 & 2 & 1 \end{bmatrix} * I
 
 ### Q22: What is the purpose of Virtual Desk Zoning?
 **Answer:** It divides the desk into functional regions:
-1. **Primary Work Zone (Center):** Designated for laptop, keyboard, and study notebooks.
+1. **Primary Work Zone (Center):** Designated for laptop, keyboard, mouse, and study books.
 2. **Safe Beverage Zone (Perimeter):** Safe zone for drinks, isolated from electronics.
-3. **Distraction-Free Zone:** Zero-tolerance zone for mobile phones.
+3. **Distraction-Free Boundary:** Flags phones placed in the active work area.
 
 ---
 
 ### Q23: Why is high-frequency edge density included in the Clutter Index?
-**Answer:** A desk cluttered with scattered papers, cables, pens, and crumpled trash creates significant high-frequency edge discontinuities across the surface. Measuring Canny edge density captures clutter that might not form neat recognized object bounding boxes.
+**Answer:** A desk cluttered with scattered loose papers, cables, and small items creates significant high-frequency edge discontinuities across the surface. Measuring Canny edge density captures clutter that might not form clean recognized object bounding boxes.
 
 ---
 
@@ -154,5 +150,5 @@ $$G_y = \begin{bmatrix} -1 & -2 & -1 \\ 0 & 0 & 0 \\ 1 & 2 & 1 \end{bmatrix} * I
 ### Q25: What are future improvements that could be added to this system?
 **Answer:**
 1. 3D depth camera integration (e.g. Intel RealSense) for precise millimeter depth measurements.
-2. Pose estimation (MediaPipe Pose / YOLOv8-pose) for ergonomic spinal alignment and neck angle tracking.
+2. Full skeletal pose estimation (e.g. MediaPipe Pose / YOLOv8-pose) for ergonomic spinal alignment and neck angle tracking.
 3. Micro-gesture detection to detect hand reaching toward a cup to preemptively alert before an accidental knock-over occurs.

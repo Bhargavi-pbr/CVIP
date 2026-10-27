@@ -1,7 +1,14 @@
 /**
  * ============================================================================
- * Smart Desk CVIP Main Application Controller
- * Handles UI interactions, video stream, detection loop, charts, and report exports
+ * Smart Desk CVIP Main Application Controller (Refined & Validated)
+ * ----------------------------------------------------------------------------
+ * Fixes Applied:
+ * 1. Full HTML5 Video Upload & Frame-by-Frame Detection Processing Loop
+ * 2. Removed Fake Fallback Detections - Genuine Model Inference Only
+ * 3. Graceful Model Loading & Webcam Permissions Error Handling
+ * 4. Standardized DCI & Edge-to-Edge Normalized Hazard Proximity
+ * 5. Primary Work Zone Phone-Based Distraction Estimator
+ * 6. User Screen Proximity Estimation
  * ============================================================================
  */
 
@@ -12,7 +19,8 @@ class SmartDeskApp {
     this.ctx = this.canvas.getContext('2d');
     
     this.isStreaming = false;
-    this.currentMode = 'scenarios'; // 'webcam', 'upload', 'scenarios'
+    this.isVideoFilePlaying = false;
+    this.currentMode = 'scenarios'; // 'webcam', 'image', 'video', 'scenarios'
     this.activeScenario = 'clean';
     this.animFrameId = null;
 
@@ -30,6 +38,13 @@ class SmartDeskApp {
     this.currentDetections = [];
     this.currentFrameSource = null;
 
+    // Video file element for uploaded videos
+    this.uploadedVideo = document.createElement('video');
+    this.uploadedVideo.playsInline = true;
+    this.uploadedVideo.muted = true;
+    this.uploadedVideo.loop = true;
+    this.uploadedVideoUrl = null;
+
     // Pipeline studio state
     this.pipelineStep = 1;
     this.pipelineCanvas = document.getElementById('pipeline-canvas');
@@ -45,21 +60,33 @@ class SmartDeskApp {
     this.loadScenario('clean');
 
     // Attempt to load TensorFlow.js COCO-SSD asynchronously
+    this.updateModelStatusBadge('loading');
     if (window.smartDeskDetector) {
       window.smartDeskDetector.loadModel().then(() => {
-        this.updateModelStatusBadge();
+        this.updateModelStatusBadge(window.smartDeskDetector.isModelReady ? 'ready' : 'error');
+      }).catch(err => {
+        console.error('Model load failure:', err);
+        this.updateModelStatusBadge('error');
       });
     }
   }
 
-  updateModelStatusBadge() {
+  updateModelStatusBadge(state) {
     const badge = document.getElementById('model-status-badge');
-    if (badge) {
-      if (window.smartDeskDetector.isModelReady) {
-        badge.innerHTML = `<span class="status-indicator"></span> AI Model: COCO-SSD (Active)`;
-      } else {
-        badge.innerHTML = `<span class="status-indicator" style="background:#06b6d4;"></span> Engine: CVIP Analytical`;
-      }
+    if (!badge) return;
+
+    if (state === 'loading') {
+      badge.innerHTML = `<span class="status-indicator" style="background:#f59e0b; animation:pulse-slow 1s infinite;"></span> AI Model: Loading...`;
+      badge.style.borderColor = 'rgba(245, 158, 11, 0.4)';
+      badge.style.color = '#f59e0b';
+    } else if (state === 'ready') {
+      badge.innerHTML = `<span class="status-indicator"></span> AI Model: COCO-SSD (Active)`;
+      badge.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+      badge.style.color = 'var(--accent-emerald)';
+    } else {
+      badge.innerHTML = `<span class="status-indicator" style="background:#f43f5e;"></span> AI Model: Offline / Benchmark Mode`;
+      badge.style.borderColor = 'rgba(244, 63, 94, 0.4)';
+      badge.style.color = '#fca5a5';
     }
   }
 
@@ -67,7 +94,7 @@ class SmartDeskApp {
     // Navigation Tabs
     const tabBtns = document.querySelectorAll('.tab-btn');
     tabBtns.forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', () => {
         const tabTarget = btn.getAttribute('data-tab');
         this.switchTab(tabTarget);
       });
@@ -77,6 +104,12 @@ class SmartDeskApp {
     const startCamBtn = document.getElementById('btn-start-camera');
     if (startCamBtn) {
       startCamBtn.addEventListener('click', () => this.toggleWebcam());
+    }
+
+    // Video Play/Pause toggle
+    const videoPlayBtn = document.getElementById('btn-video-play-pause');
+    if (videoPlayBtn) {
+      videoPlayBtn.addEventListener('click', () => this.toggleVideoPlayback());
     }
 
     // Preset Scenario Cards
@@ -114,9 +147,10 @@ class SmartDeskApp {
       toggleAudioBtn.addEventListener('click', () => {
         const isMuted = window.audioAlertSystem.toggleMute();
         toggleAudioBtn.innerHTML = isMuted 
-          ? `<i class="lucide-volume-x"></i> Unmute Audio` 
-          : `<i class="lucide-volume-2"></i> Mute Audio`;
+          ? `<i data-lucide="volume-x"></i> Unmute Audio` 
+          : `<i data-lucide="volume-2"></i> Mute Audio`;
         toggleAudioBtn.classList.toggle('btn-danger', isMuted);
+        if (window.lucide) window.lucide.createIcons();
       });
     }
 
@@ -221,27 +255,56 @@ class SmartDeskApp {
   }
 
   /**
-   * Webcam Streaming Toggle
+   * Stop any active video or webcam stream cleanly
    */
-  async toggleWebcam() {
-    const btn = document.getElementById('btn-start-camera');
+  stopActiveStreams() {
+    if (this.animFrameId) {
+      cancelAnimationFrame(this.animFrameId);
+      this.animFrameId = null;
+    }
     if (this.isStreaming) {
-      // Stop webcam
       if (this.video.srcObject) {
         this.video.srcObject.getTracks().forEach(track => track.stop());
       }
       this.video.srcObject = null;
       this.isStreaming = false;
-      btn.innerHTML = `<i class="lucide-camera"></i> Start Webcam Feed`;
-      btn.classList.remove('btn-danger');
-      window.deskAnalytics.addLog('info', 'Webcam stream paused');
+      const btn = document.getElementById('btn-start-camera');
+      if (btn) {
+        btn.innerHTML = `<i data-lucide="camera"></i> Start Webcam Feed`;
+        btn.classList.remove('btn-danger');
+      }
+    }
+    if (this.isVideoFilePlaying) {
+      this.uploadedVideo.pause();
+      this.isVideoFilePlaying = false;
+      const vControls = document.getElementById('video-controls-bar');
+      if (vControls) vControls.style.display = 'none';
+    }
+  }
+
+  /**
+   * Webcam Streaming Toggle with Graceful Permissions & Error Handling
+   */
+  async toggleWebcam() {
+    const btn = document.getElementById('btn-start-camera');
+    if (this.isStreaming) {
+      this.stopActiveStreams();
+      window.deskAnalytics.addLog('info', 'Webcam stream stopped');
+      if (window.lucide) window.lucide.createIcons();
     } else {
-      // Start webcam
+      this.stopActiveStreams();
       try {
-        btn.innerHTML = `Connecting Camera...`;
+        btn.innerHTML = `Requesting Camera Access...`;
+
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error('Webcam API is not supported in this browser environment.');
+        }
+
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+          audio: false
         });
+
         this.video.srcObject = stream;
         await this.video.play();
         this.isStreaming = true;
@@ -251,41 +314,68 @@ class SmartDeskApp {
         this.canvas.width = this.video.videoWidth || 1280;
         this.canvas.height = this.video.videoHeight || 720;
 
-        btn.innerHTML = `<i class="lucide-camera-off"></i> Stop Webcam`;
+        btn.innerHTML = `<i data-lucide="camera-off"></i> Stop Webcam`;
         btn.classList.add('btn-danger');
-        window.deskAnalytics.addLog('info', 'Webcam stream started');
+        window.deskAnalytics.addLog('info', 'Webcam feed connected successfully');
+        if (window.lucide) window.lucide.createIcons();
+
+        // Clear active scenario pill highlight
+        document.querySelectorAll('.scenario-card').forEach(c => c.classList.remove('active'));
 
         this.runLiveDetectionLoop();
       } catch (err) {
         console.error('Webcam access error:', err);
-        alert('Could not access webcam. You can use the Preset Scenarios or Upload Image mode instead!');
-        btn.innerHTML = `<i class="lucide-camera"></i> Start Webcam Feed`;
+        let userMessage = 'Unable to access webcam.';
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          userMessage = 'Camera permission was denied. Please allow camera access in your browser site settings.';
+        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+          userMessage = 'No camera device detected on this system. You can test using the Preset Scenarios or Upload Image/Video.';
+        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          userMessage = 'Camera is currently in use by another application (e.g. Zoom, Teams). Please close other apps and retry.';
+        }
+        alert(userMessage);
+        window.deskAnalytics.addLog('warn', `Camera access notice: ${err.name || 'Denied'}`);
+        btn.innerHTML = `<i data-lucide="camera"></i> Start Webcam Feed`;
+        btn.classList.remove('btn-danger');
+        if (window.lucide) window.lucide.createIcons();
       }
     }
   }
 
   /**
-   * Live Detection Loop for Webcam
+   * Live Detection Loop for Webcam and Uploaded Video
    */
   async runLiveDetectionLoop() {
-    if (!this.isStreaming) return;
+    const isSourceActive = (this.isStreaming && this.video.readyState >= 2) || 
+                          (this.isVideoFilePlaying && this.uploadedVideo.readyState >= 2);
 
-    // Calculate FPS
+    if (!isSourceActive) {
+      if (this.isStreaming || this.isVideoFilePlaying) {
+        this.animFrameId = requestAnimationFrame(() => this.runLiveDetectionLoop());
+      }
+      return;
+    }
+
+    const source = this.isStreaming ? this.video : this.uploadedVideo;
+
+    // Calculate real-time FPS
     const now = performance.now();
     const delta = (now - this.lastFrameTime) / 1000;
     this.lastFrameTime = now;
-    this.fps = Math.round(1 / delta);
-    const fpsEl = document.getElementById('fps-val');
-    if (fpsEl) fpsEl.textContent = `${this.fps} FPS`;
+    if (delta > 0) {
+      this.fps = Math.round(1 / delta);
+      const fpsEl = document.getElementById('fps-val');
+      if (fpsEl) fpsEl.textContent = `${this.fps} FPS`;
+    }
 
-    // Run Object Detection
+    // Run Genuine Object Detection
     let detections = [];
     if (window.smartDeskDetector.isModelReady) {
-      detections = await window.smartDeskDetector.detect(this.video);
+      detections = await window.smartDeskDetector.detect(source);
     }
 
     this.currentDetections = detections;
-    this.processDetectionFrame(this.video, detections);
+    this.processDetectionFrame(source, detections);
 
     this.animFrameId = requestAnimationFrame(() => this.runLiveDetectionLoop());
   }
@@ -294,9 +384,9 @@ class SmartDeskApp {
    * Preset Desk Scenarios Loader
    */
   loadScenario(scenarioKey) {
+    this.stopActiveStreams();
     this.activeScenario = scenarioKey;
     this.currentMode = 'scenarios';
-    if (this.isStreaming) this.toggleWebcam(); // Pause webcam if active
 
     let result;
     if (scenarioKey === 'clean') {
@@ -315,60 +405,116 @@ class SmartDeskApp {
       this.canvas.width = result.canvas.width;
       this.canvas.height = result.canvas.height;
       this.processDetectionFrame(result.canvas, result.detections);
-      window.deskAnalytics.addLog('info', `Scenario Loaded: ${result.name}`);
+      window.deskAnalytics.addLog('info', `Benchmark Preset Loaded: ${result.name}`);
     }
   }
 
   /**
-   * Handle Uploaded Image or Video File
+   * Handle Uploaded Image or Video File (Proper Video Processing Implemented!)
    */
   handleFileUpload(file) {
     const isImage = file.type.startsWith('image/');
     const isVideo = file.type.startsWith('video/');
 
     if (!isImage && !isVideo) {
-      alert('Please upload an image or video file.');
+      alert('Please upload an image (PNG, JPG, WEBP) or video (MP4, WEBM) file.');
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      if (isImage) {
+    this.stopActiveStreams();
+    document.querySelectorAll('.scenario-card').forEach(c => c.classList.remove('active'));
+
+    // Check if model is ready for genuine inference
+    if (!window.smartDeskDetector.isModelReady) {
+      const waitNotice = 'Note: The COCO-SSD Deep Learning model is currently loading or unavailable. While presets work offline, custom file analysis requires the neural model. Attempting genuine inference now...';
+      window.deskAnalytics.addLog('warn', waitNotice);
+    }
+
+    if (isImage) {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
         const img = new Image();
         img.onload = async () => {
-          this.currentMode = 'upload';
+          this.currentMode = 'image';
           this.currentFrameSource = img;
-          this.canvas.width = img.width;
-          this.canvas.height = img.height;
+          this.canvas.width = img.naturalWidth || img.width;
+          this.canvas.height = img.naturalHeight || img.height;
 
-          // Run detection
           let detections = [];
           if (window.smartDeskDetector.isModelReady) {
             detections = await window.smartDeskDetector.detect(img);
           } else {
-            // Heuristic detection based on image processing
-            detections = this.heuristicDetectFromImage(img);
+            // FIXED: Do NOT inject fake detections! Genuinely alert user if model is unavailable.
+            alert('COCO-SSD Deep Learning model is still initializing. Please wait a moment until model status is Active, then re-upload.');
           }
 
           this.currentDetections = detections;
           this.processDetectionFrame(img, detections);
-          window.deskAnalytics.addLog('info', `Uploaded image analyzed: ${file.name}`);
+          window.deskAnalytics.addLog('info', `Custom image analyzed: ${file.name} (${detections.length} objects detected)`);
         };
         img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    } else if (isVideo) {
+      // IMPLEMENTED: Video upload & continuous frame-by-frame analysis
+      if (this.uploadedVideoUrl) {
+        URL.revokeObjectURL(this.uploadedVideoUrl);
       }
-    };
-    reader.readAsDataURL(file);
+      this.uploadedVideoUrl = URL.createObjectURL(file);
+      this.uploadedVideo.src = this.uploadedVideoUrl;
+
+      this.uploadedVideo.onloadedmetadata = async () => {
+        this.currentMode = 'video';
+        this.currentFrameSource = this.uploadedVideo;
+        this.canvas.width = this.uploadedVideo.videoWidth || 1280;
+        this.canvas.height = this.uploadedVideo.videoHeight || 720;
+
+        // Show video playback toolbar
+        const vControls = document.getElementById('video-controls-bar');
+        if (vControls) vControls.style.display = 'flex';
+
+        const btnPlay = document.getElementById('btn-video-play-pause');
+        if (btnPlay) {
+          btnPlay.innerHTML = `<i data-lucide="pause"></i> Pause Video`;
+          if (window.lucide) window.lucide.createIcons();
+        }
+
+        try {
+          await this.uploadedVideo.play();
+          this.isVideoFilePlaying = true;
+          window.deskAnalytics.addLog('info', `Uploaded video loaded: ${file.name}. Commencing frame detection.`);
+          this.runLiveDetectionLoop();
+        } catch (playErr) {
+          console.error('Video play error:', playErr);
+          alert('Could not auto-play video. Click "Play Video" to start analysis.');
+        }
+      };
+
+      this.uploadedVideo.onerror = (e) => {
+        console.error('Video file loading error:', e);
+        alert('Could not load video file. Please ensure the video format is supported (e.g. H.264 MP4).');
+      };
+    }
   }
 
   /**
-   * Fallback heuristic detection for uploaded images
+   * Video Play / Pause Toggle for Uploaded Video
    */
-  heuristicDetectFromImage(img) {
-    return [
-      { class: 'laptop', score: 0.91, bbox: [img.width * 0.28, img.height * 0.25, img.width * 0.44, img.height * 0.45] },
-      { class: 'cup', score: 0.86, bbox: [img.width * 0.18, img.height * 0.4, img.width * 0.1, img.height * 0.15] },
-      { class: 'book', score: 0.84, bbox: [img.width * 0.72, img.height * 0.3, img.width * 0.2, img.height * 0.35] }
-    ];
+  toggleVideoPlayback() {
+    const btn = document.getElementById('btn-video-play-pause');
+    if (!this.uploadedVideo || !this.uploadedVideo.src) return;
+
+    if (this.uploadedVideo.paused) {
+      this.uploadedVideo.play();
+      this.isVideoFilePlaying = true;
+      if (btn) btn.innerHTML = `<i data-lucide="pause"></i> Pause Video`;
+      this.runLiveDetectionLoop();
+    } else {
+      this.uploadedVideo.pause();
+      this.isVideoFilePlaying = false;
+      if (btn) btn.innerHTML = `<i data-lucide="play"></i> Play Video`;
+    }
+    if (window.lucide) window.lucide.createIcons();
   }
 
   /**
@@ -381,11 +527,11 @@ class SmartDeskApp {
     // Draw base source onto canvas
     this.ctx.drawImage(source, 0, 0, w, h);
 
-    // 1. Check Spill Hazard Proximity
-    const hazardResult = window.deskAnalytics.checkSpillHazards(detections);
+    // 1. Check Spill Hazard Proximity using Edge-to-Edge Normalized Distance
+    const hazardResult = window.deskAnalytics.checkSpillHazards(detections, w, h);
     const hazardBanner = document.getElementById('hazard-banner');
 
-    if (hazardResult.criticalHazard) {
+    if (hazardResult.criticalHazard && hazardResult.hazards.length > 0) {
       if (hazardBanner) {
         hazardBanner.classList.add('show');
         hazardBanner.innerHTML = `⚠️ <span>${hazardResult.hazards[0].message}</span>`;
@@ -396,36 +542,37 @@ class SmartDeskApp {
       if (hazardBanner) hazardBanner.classList.remove('show');
     }
 
-    // 2. Calculate Desk Clutter Index (DCI)
-    // Estimate edge density from CVIP processor
-    let edgeDensity = 0.25;
+    // 2. Calculate Desk Clutter Index (DCI) with Border-Safe Edge Density
+    let edgeDensity = 0.22;
     try {
       const imgData = window.cvipProcessor.getImageData(source);
-      const gray = window.cvipProcessor.toGrayscale(imgData);
-      const edges = window.cvipProcessor.cannyEdgeDetection(gray, imgData.width, imgData.height, 35, 75);
-      edgeDensity = window.cvipProcessor.calculateEdgeDensity(edges);
+      if (imgData) {
+        const gray = window.cvipProcessor.toGrayscale(imgData);
+        const edges = window.cvipProcessor.cannyEdgeDetection(gray, imgData.width, imgData.height, 35, 75);
+        edgeDensity = window.cvipProcessor.calculateEdgeDensity(edges);
+      }
     } catch (e) {
-      // fallback
+      // Fallback to standard baseline
     }
 
     const clutter = window.deskAnalytics.calculateClutterIndex(detections, w, h, edgeDensity);
     this.updateClutterHUD(clutter);
 
-    // 3. Track Distractions & Focus
-    const focusData = window.deskAnalytics.trackFocus(detections);
+    // 3. Track Distractions & Focus (Refined Phone-Based Distraction Estimator)
+    const focusData = window.deskAnalytics.trackFocus(detections, w, h);
     this.updateDistractionHUD(focusData);
 
-    // 4. Ergonomics / Posture Tracking
-    const ergo = window.deskAnalytics.trackErgonomics(detections, w, h);
-    this.updateErgonomicsHUD(ergo);
+    // 4. User Screen Proximity Estimation (Honest proxy measurement)
+    const proximityData = window.deskAnalytics.trackUserProximity(detections, w, h);
+    this.updateProximityHUD(proximityData);
 
-    // 5. Update Category Counts
+    // 5. Update Categorized Inventory (Strict Standard COCO classes)
     this.updateCategoryCounts(detections);
 
-    // 6. Render Bounding Boxes & Laser Hazard Lines
+    // 6. Render Bounding Boxes & Normalized Hazard Lines
     window.smartDeskDetector.renderAnnotations(this.ctx, detections, w, h, hazardResult.hazards);
 
-    // 7. Update Session Clutter History for chart
+    // 7. Update Session Clutter History for trend chart
     if (this.clutterHistory.length > 25) this.clutterHistory.shift();
     this.clutterHistory.push(clutter.score);
 
@@ -456,7 +603,6 @@ class SmartDeskApp {
       labelEl.style.color = clutter.color;
     }
     if (fillEl) {
-      // Circumference = 2 * PI * 40 ≈ 251.2
       const offset = 251.2 - (clutter.score / 100) * 251.2;
       fillEl.style.strokeDashoffset = offset;
       fillEl.style.stroke = clutter.color;
@@ -469,24 +615,31 @@ class SmartDeskApp {
   updateDistractionHUD(focusData) {
     const tagEl = document.getElementById('tag-distraction');
     if (tagEl) {
-      if (focusData.hasPhone) {
-        tagEl.textContent = 'Phone Detected';
+      if (focusData.state === 'distraction_in_zone') {
+        tagEl.textContent = 'Phone in Work Zone';
         tagEl.className = 'status-tag danger';
         window.audioAlertSystem.playDistractionWarning();
-      } else {
-        tagEl.textContent = 'Focus Zone Clear';
+      } else if (focusData.state === 'desk_vacant') {
+        tagEl.textContent = 'Desk Vacant / Inactive';
         tagEl.className = 'status-tag safe';
+        tagEl.style.background = 'rgba(107, 114, 128, 0.2)';
+        tagEl.style.color = 'var(--text-muted)';
+      } else {
+        tagEl.textContent = 'Work Zone Clear';
+        tagEl.className = 'status-tag safe';
+        tagEl.style.background = 'rgba(16, 185, 129, 0.2)';
+        tagEl.style.color = 'var(--accent-emerald)';
       }
     }
     const focusScoreEl = document.getElementById('focus-score-val');
     if (focusScoreEl) focusScoreEl.textContent = `${focusData.focusScore}%`;
   }
 
-  updateErgonomicsHUD(ergo) {
+  updateProximityHUD(prox) {
     const tagEl = document.getElementById('tag-ergonomics');
     if (tagEl) {
-      tagEl.textContent = ergo.postureStatus;
-      tagEl.className = `status-tag ${ergo.level}`;
+      tagEl.textContent = prox.status;
+      tagEl.className = `status-tag ${prox.level}`;
     }
   }
 
@@ -539,13 +692,14 @@ class SmartDeskApp {
   renderPipelineStep() {
     if (!this.pipelineCanvas || !this.currentFrameSource) return;
 
-    const w = this.currentFrameSource.width || this.currentFrameSource.videoWidth || 1280;
-    const h = this.currentFrameSource.height || this.currentFrameSource.videoHeight || 720;
+    const w = this.currentFrameSource.videoWidth || this.currentFrameSource.naturalWidth || this.currentFrameSource.width || 1280;
+    const h = this.currentFrameSource.videoHeight || this.currentFrameSource.naturalHeight || this.currentFrameSource.height || 720;
     this.pipelineCanvas.width = w;
     this.pipelineCanvas.height = h;
 
     const proc = window.cvipProcessor;
     const imgData = proc.getImageData(this.currentFrameSource);
+    if (!imgData) return;
     const gray = proc.toGrayscale(imgData);
 
     const titleEl = document.getElementById('pipe-step-title');
@@ -553,28 +707,25 @@ class SmartDeskApp {
     const descEl = document.getElementById('pipe-desc');
 
     if (this.pipelineStep === 1) {
-      // 1. Original RGB Frame
       this.pipelineCtx.drawImage(this.currentFrameSource, 0, 0, w, h);
       if (titleEl) titleEl.textContent = 'Step 1: Original Color Space (RGB)';
       if (formulaEl) formulaEl.innerHTML = `RGB Pixel Vector: \\( \\mathbf{P}(x,y) = [R(x,y), G(x,y), B(x,y)]^T \\)`;
       if (descEl) descEl.textContent = 'Raw input image captured from the workspace camera with full 24-bit 3-channel color representation.';
     } else if (this.pipelineStep === 2) {
-      // 2. Grayscale Conversion
       const grayImgData = proc.grayToImageData(gray, w, h);
       this.pipelineCtx.putImageData(grayImgData, 0, 0);
       if (titleEl) titleEl.textContent = 'Step 2: Luminance Grayscale Conversion';
       if (formulaEl) formulaEl.innerHTML = `ITU-R BT.601: \\( Y = 0.299R + 0.587G + 0.114B \\)`;
       if (descEl) descEl.textContent = 'Reduces computational complexity from 3 channels to 1 intensity channel while preserving human visual luminance perception.';
     } else if (this.pipelineStep === 3) {
-      // 3. Gaussian Blur Smoothing
+      // Gaussian Blur with Border Replication (Zero Dark Border Artifacts!)
       const blurred = proc.gaussianBlur5x5(gray, w, h);
       const blurImgData = proc.grayToImageData(blurred, w, h);
       this.pipelineCtx.putImageData(blurImgData, 0, 0);
-      if (titleEl) titleEl.textContent = 'Step 3: 2D Gaussian Kernel Smoothing';
-      if (formulaEl) formulaEl.innerHTML = `Gaussian Convolution: \\( G_\\sigma(x, y) = \\frac{1}{2\\pi\\sigma^2} e^{-\\frac{x^2 + y^2}{2\\sigma^2}} \\ast I(x, y) \\)`;
-      if (descEl) descEl.textContent = 'Suppresses sensor noise and high-frequency camera artifacts so spurious noise does not trigger false edges.';
+      if (titleEl) titleEl.textContent = 'Step 3: 2D Gaussian Kernel Smoothing with Border Replication';
+      if (formulaEl) formulaEl.innerHTML = `Gaussian Convolution with Edge Clamping: \\( G_\\sigma(x, y) = \\frac{1}{2\\pi\\sigma^2} e^{-\\frac{x^2 + y^2}{2\\sigma^2}} \\ast I(x, y) \\)`;
+      if (descEl) descEl.textContent = 'Suppresses sensor noise and high-frequency camera artifacts with boundary coordinate replication to eliminate artificial dark borders.';
     } else if (this.pipelineStep === 4) {
-      // 4. Sobel Gradient Magnitude
       const smoothed = proc.gaussianBlur5x5(gray, w, h);
       const { magnitude } = proc.sobelGradients(smoothed, w, h);
       const magGray = new Uint8ClampedArray(w * h);
@@ -584,34 +735,30 @@ class SmartDeskApp {
       if (formulaEl) formulaEl.innerHTML = `Gradient Magnitude: \\( |\\nabla I| = \\sqrt{G_x^2 + G_y^2}, \\quad \\theta = \\arctan2(G_y, G_x) \\)`;
       if (descEl) descEl.textContent = 'Measures rapid spatial intensity variations in horizontal and vertical directions across the desk.';
     } else if (this.pipelineStep === 5) {
-      // 5. Canny Edge Detection
       const low = parseInt(document.getElementById('pipe-canny-low')?.value || 25, 10);
       const high = parseInt(document.getElementById('pipe-canny-high')?.value || 65, 10);
       const edges = proc.cannyEdgeDetection(gray, w, h, low, high);
       this.pipelineCtx.putImageData(proc.grayToImageData(edges, w, h), 0, 0);
       if (titleEl) titleEl.textContent = 'Step 5: Canny Edge Detection (NMS + Hysteresis)';
       if (formulaEl) formulaEl.innerHTML = `Hysteresis: \\( E(x,y) = \\begin{cases} 255 & \\text{if } |\\nabla I| \\ge T_h \\text{ or connected to strong} \\\\ 0 & \\text{otherwise} \\end{cases} \\)`;
-      if (descEl) descEl.textContent = 'Produces 1-pixel thin edges with optimal signal-to-noise ratio, isolating desk boundaries, laptop borders, and scattered objects.';
+      if (descEl) descEl.textContent = 'Produces 1-pixel thin edges with optimal signal-to-noise ratio, isolating desk boundaries and scattered objects.';
     } else if (this.pipelineStep === 6) {
-      // 6. Otsu Automated Thresholding
       const { binary, threshold } = proc.otsuThreshold(gray, w, h);
       this.pipelineCtx.putImageData(proc.grayToImageData(binary, w, h), 0, 0);
       if (titleEl) titleEl.textContent = `Step 6: Otsu Global Binarization (Optimal T = ${threshold})`;
       if (formulaEl) formulaEl.innerHTML = `Optimal Threshold: \\( T^* = \\arg\\max_T \\sigma_B^2(T) = w_0(T) w_1(T) [\\mu_0(T) - \\mu_1(T)]^2 \\)`;
       if (descEl) descEl.textContent = 'Separates foreground desk items from background desk wood/mat by maximizing the between-class variance.';
     } else if (this.pipelineStep === 7) {
-      // 7. HSV Beverage / Color Mask
       const mask = proc.rgbToHsvMask(imgData);
       this.pipelineCtx.putImageData(proc.grayToImageData(mask, w, h), 0, 0);
       if (titleEl) titleEl.textContent = 'Step 7: HSV Color Space Liquid/Mug Segmentation';
       if (formulaEl) formulaEl.innerHTML = `HSV Range: \\( H \\in [10^\\circ, 45^\\circ], \\; S \\ge 0.25, \\; V \\ge 0.20 \\)`;
       if (descEl) descEl.textContent = 'Isolates warm ceramic coffee mugs and drink containers based on hue purity independent of illumination intensity.';
     } else if (this.pipelineStep === 8) {
-      // 8. Fully Processed Detection
       this.pipelineCtx.drawImage(this.canvas, 0, 0, w, h);
       if (titleEl) titleEl.textContent = 'Step 8: Final Deep Learning Multi-Class Detection';
-      if (formulaEl) formulaEl.innerHTML = `Bounding Box IoU: \\( \\text{IoU} = \\frac{\\text{Area}(B_p \\cap B_{gt})}{\\text{Area}(B_p \\cup B_{gt})} \\ge \\tau \\)`;
-      if (descEl) descEl.textContent = 'Integrates neural object localization with spatial proximity safety matrices and clutter indexing.';
+      if (formulaEl) formulaEl.innerHTML = `Edge Proximity: \\( d_{\\text{edge}} = \\sqrt{\\Delta x^2 + \\Delta y^2}, \\quad d_{\\text{norm}} = \\frac{d_{\\text{edge}}}{\\text{Diagonal}} \\)`;
+      if (descEl) descEl.textContent = 'Integrates verified neural object localization with normalized edge-to-edge spatial proximity safety matrices and clutter indexing.';
     }
   }
 
@@ -621,7 +768,6 @@ class SmartDeskApp {
   initCharts() {
     if (!window.Chart) return;
 
-    // 1. Clutter Trend Chart
     const clutterCtx = document.getElementById('chart-clutter-trend');
     if (clutterCtx) {
       this.clutterChart = new Chart(clutterCtx, {
@@ -650,7 +796,6 @@ class SmartDeskApp {
       });
     }
 
-    // 2. Category Distribution Chart
     const catCtx = document.getElementById('chart-category-dist');
     if (catCtx) {
       this.categoryChart = new Chart(catCtx, {
@@ -718,9 +863,6 @@ class SmartDeskApp {
           table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
           th, td { border: 1px solid #cbd5e1; padding: 8px 12px; text-align: left; }
           th { background: #f8fafc; font-weight: 600; }
-          .badge { padding: 3px 8px; border-radius: 4px; font-weight: 600; font-size: 11px; }
-          .badge-safe { background: #dcfce7; color: #15803d; }
-          .badge-alert { background: #fee2e2; color: #b91c1c; }
           .footer { margin-top: 40px; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 10px; }
         </style>
       </head>
@@ -731,7 +873,7 @@ class SmartDeskApp {
         <div class="meta-box">
           <div class="meta-grid">
             <div><strong>Timestamp:</strong> ${dateStr}</div>
-            <div><strong>Active Scenario:</strong> ${this.activeScenario.toUpperCase()}</div>
+            <div><strong>Current Mode:</strong> ${this.currentMode.toUpperCase()}</div>
             <div><strong>Detected Objects Count:</strong> ${this.currentDetections.length}</div>
             <div><strong>System Status:</strong> Active & Monitored</div>
           </div>
@@ -742,7 +884,7 @@ class SmartDeskApp {
           <img class="snapshot-img" src="${snapshotUrl}" alt="Workspace Snapshot" />
         </div>
 
-        <h3>Detected Objects & Spatial Diagnostics</h3>
+        <h3>Detected Objects (Verified COCO Classes)</h3>
         <table>
           <thead>
             <tr>
@@ -768,6 +910,7 @@ class SmartDeskApp {
 
         <div class="footer">
           Generated automatically by Smart Desk Object Detection and Monitoring System (CVIP Project).
+          Note: DCI is a project-defined heuristic score. Pixel distances are 2D proxy measurements.
         </div>
       </body>
       </html>

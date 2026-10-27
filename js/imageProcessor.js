@@ -3,8 +3,8 @@
  * CVIP Image Processing Engine
  * Core classical Computer Vision algorithms implemented in pure JavaScript:
  * 1. Grayscale Conversion (Luminance weighting)
- * 2. 2D Gaussian Convolution Smoothing
- * 3. Sobel Gradient Magnitude & Direction
+ * 2. 2D Gaussian Convolution Smoothing with Border Replication
+ * 3. Sobel Gradient Magnitude & Direction with Edge Clamping
  * 4. Canny Edge Detector (NMS + Double Thresholding + Hysteresis)
  * 5. Otsu Automated Binarization
  * 6. Morphological Dilation and Erosion
@@ -25,10 +25,11 @@ class CVIPImageProcessor {
     this.offscreenCanvas.height = height;
   }
 
-  // Extracts ImageData from an Image or Canvas source
+  // Extracts ImageData from an Image, Video, or Canvas source
   getImageData(source) {
-    const w = source.width || source.videoWidth;
-    const h = source.height || source.videoHeight;
+    const w = source.videoWidth || source.naturalWidth || source.width;
+    const h = source.videoHeight || source.naturalHeight || source.height;
+    if (!w || !h) return null;
     this.setup(w, h);
     this.ctx.drawImage(source, 0, 0, w, h);
     return this.ctx.getImageData(0, 0, w, h);
@@ -66,9 +67,9 @@ class CVIPImageProcessor {
   }
 
   /**
-   * 2. 2D Gaussian Blur Smoothing
+   * 2. 2D Gaussian Blur Smoothing with Border Replication (Edge Clamping)
    * 5x5 Normalized Gaussian Kernel (sigma ≈ 1.4)
-   * Reduces high-frequency sensor noise before edge detection
+   * Fixed: Border pixels replicate nearest boundary values, eliminating artificial dark borders!
    */
   gaussianBlur5x5(gray, width, height) {
     const output = new Uint8ClampedArray(width * height);
@@ -82,43 +83,43 @@ class CVIPImageProcessor {
     ];
     const kSum = 273;
 
-    for (let y = 2; y < height - 2; y++) {
+    for (let y = 0; y < height; y++) {
       const yOffset = y * width;
-      for (let x = 2; x < width - 2; x++) {
+      for (let x = 0; x < width; x++) {
         let sum = 0;
         let ki = 0;
         for (let ky = -2; ky <= 2; ky++) {
-          const rowOffset = (y + ky) * width;
+          // Edge clamping (replication) for Y boundary
+          const cy = Math.min(height - 1, Math.max(0, y + ky));
+          const rowOffset = cy * width;
           for (let kx = -2; kx <= 2; kx++) {
-            sum += gray[rowOffset + (x + kx)] * kernel[ki++];
+            // Edge clamping (replication) for X boundary
+            const cx = Math.min(width - 1, Math.max(0, x + kx));
+            sum += gray[rowOffset + cx] * kernel[ki++];
           }
         }
-        output[yOffset + x] = sum / kSum;
+        output[yOffset + x] = Math.round(sum / kSum);
       }
     }
     return output;
   }
 
   /**
-   * 3. Sobel Gradient Operators
+   * 3. Sobel Gradient Operators with Border Clamping
    * Computes spatial derivatives Gx and Gy, gradient magnitude, and orientation theta
    */
   sobelGradients(gray, width, height) {
     const magnitude = new Float32Array(width * height);
     const direction = new Float32Array(width * height);
 
-    // Sobel kernels:
-    // Gx: [-1 0 1; -2 0 2; -1 0 1]
-    // Gy: [-1 -2 -1; 0 0 0; 1 2 1]
-
-    for (let y = 1; y < height - 1; y++) {
-      const ym1 = (y - 1) * width;
+    for (let y = 0; y < height; y++) {
+      const ym1 = Math.max(0, y - 1) * width;
       const y0 = y * width;
-      const yp1 = (y + 1) * width;
+      const yp1 = Math.min(height - 1, y + 1) * width;
 
-      for (let x = 1; x < width - 1; x++) {
-        const xm1 = x - 1;
-        const xp1 = x + 1;
+      for (let x = 0; x < width; x++) {
+        const xm1 = Math.max(0, x - 1);
+        const xp1 = Math.min(width - 1, x + 1);
 
         const gx = (
           -1 * gray[ym1 + xm1] + 1 * gray[ym1 + xp1] +
@@ -142,7 +143,7 @@ class CVIPImageProcessor {
   /**
    * 4. Canny Edge Detection
    * Complete multi-stage implementation:
-   * 1. Gaussian Blur (noise suppression)
+   * 1. Gaussian Blur with edge replication
    * 2. Sobel Gradients
    * 3. Non-Maximum Suppression (edge thinning)
    * 4. Double Thresholding (low & high)
@@ -162,7 +163,6 @@ class CVIPImageProcessor {
         const mag = magnitude[idx];
         if (mag === 0) continue;
 
-        // Angle in degrees normalized to 0 - 180
         let angle = (direction[idx] * 180 / Math.PI);
         if (angle < 0) angle += 180;
 
@@ -202,7 +202,6 @@ class CVIPImageProcessor {
     const STRONG = 255;
     const WEAK = 75;
 
-    // Classification
     for (let i = 0; i < nms.length; i++) {
       const val = nms[i];
       if (val >= highThreshold) {
@@ -220,7 +219,6 @@ class CVIPImageProcessor {
       for (let x = 1; x < width - 1; x++) {
         const idx = y0 + x;
         if (edges[idx] === WEAK) {
-          // Check 8-neighborhood for a strong edge
           const hasStrongNeighbor = (
             edges[(y - 1) * width + (x - 1)] === STRONG ||
             edges[(y - 1) * width + x]       === STRONG ||
@@ -231,7 +229,6 @@ class CVIPImageProcessor {
             edges[(y + 1) * width + x]       === STRONG ||
             edges[(y + 1) * width + (x + 1)] === STRONG
           );
-
           edges[idx] = hasStrongNeighbor ? STRONG : 0;
         }
       }
@@ -242,10 +239,9 @@ class CVIPImageProcessor {
 
   /**
    * 5. Otsu Automated Global Thresholding
-   * Maximizes inter-class variance to calculate the optimal binarization threshold
+   * Maximizes between-class variance to calculate the optimal binarization threshold
    */
   otsuThreshold(gray, width, height) {
-    // 1. Calculate histogram
     const histogram = new Uint32Array(256);
     const totalPixels = width * height;
     for (let i = 0; i < totalPixels; i++) {
@@ -273,7 +269,6 @@ class CVIPImageProcessor {
       const mB = sumB / wB;
       const mF = (sum - sumB) / wF;
 
-      // Between-class variance
       const varBetween = wB * wF * (mB - mF) * (mB - mF);
       if (varBetween > varMax) {
         varMax = varBetween;
@@ -281,7 +276,6 @@ class CVIPImageProcessor {
       }
     }
 
-    // Apply binarization
     const binary = new Uint8ClampedArray(totalPixels);
     for (let i = 0; i < totalPixels; i++) {
       binary[i] = gray[i] >= optimalThreshold ? 255 : 0;
@@ -292,14 +286,12 @@ class CVIPImageProcessor {
 
   /**
    * 6. Morphological Operations: Dilation and Erosion
-   * Structure element: 3x3 square
    */
   morphologicalDilation(binary, width, height) {
     const output = new Uint8ClampedArray(width * height);
     for (let y = 1; y < height - 1; y++) {
       const y0 = y * width;
       for (let x = 1; x < width - 1; x++) {
-        // Any neighbor 255 makes center 255
         let maxVal = 0;
         for (let ky = -1; ky <= 1; ky++) {
           const row = (y + ky) * width;
@@ -341,7 +333,6 @@ class CVIPImageProcessor {
 
   /**
    * 7. RGB to HSV Color Segmentation
-   * Useful in CVIP for isolating beverage containers, coffee mugs, or colored desk items
    */
   rgbToHsvMask(imageData, minHue = 10, maxHue = 45, minSat = 0.25, minVal = 0.2) {
     const data = imageData.data;
@@ -369,7 +360,6 @@ class CVIPImageProcessor {
       const s = max === 0 ? 0 : delta / max;
       const v = max;
 
-      // Check within range (e.g. coffee / beverage / warm colored cup)
       if (h >= minHue && h <= maxHue && s >= minSat && v >= minVal) {
         mask[j] = 255;
       } else {
@@ -381,7 +371,7 @@ class CVIPImageProcessor {
 
   /**
    * 8. Desk Clutter Edge Density Calculation
-   * Measures percentage of high-frequency edge pixels on desk surface
+   * Measures percentage of high-frequency edge pixels across the analyzed frame
    */
   calculateEdgeDensity(edges) {
     let edgeCount = 0;
@@ -389,7 +379,7 @@ class CVIPImageProcessor {
     for (let i = 0; i < total; i++) {
       if (edges[i] === 255) edgeCount++;
     }
-    return Math.min(1.0, (edgeCount / total) * 12); // Normalized edge density factor
+    return Math.min(1.0, (edgeCount / total) * 12);
   }
 }
 

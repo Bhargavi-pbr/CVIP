@@ -61,7 +61,7 @@
     <!-- Header Actions -->
     <div class="header-actions">
       <div id="model-status-badge" class="status-badge">
-        <span class="status-indicator"></span> AI Model: Ready
+        <span class="status-indicator"></span> AI Model: Initializing...
       </div>
       <div id="fps-val" class="fps-counter">60 FPS</div>
     </div>
@@ -77,19 +77,19 @@
       <div class="scenario-grid">
         <div class="scenario-card active" data-scenario="clean">
           <div class="scenario-title"><i data-lucide="check-circle" style="color:var(--accent-emerald);"></i> 1. Clean Desk</div>
-          <div class="scenario-desc">Optimal ergonomics, low clutter, beverage safely positioned in zone.</div>
+          <div class="scenario-desc">Benchmark test: low clutter, drink safely stationed in perimeter safe zone.</div>
         </div>
         <div class="scenario-card" data-scenario="cluttered">
           <div class="scenario-title"><i data-lucide="alert-triangle" style="color:var(--accent-amber);"></i> 2. High Clutter Desk</div>
-          <div class="scenario-desc">Multiple books, loose stationery, high edge density clutter.</div>
+          <div class="scenario-desc">Benchmark test: multiple books, multiple cups, and scattered desk items.</div>
         </div>
         <div class="scenario-card" data-scenario="hazard">
           <div class="scenario-title"><i data-lucide="flame" style="color:var(--accent-rose);"></i> 3. Spill Hazard Alert</div>
-          <div class="scenario-desc">Coffee mug placed dangerously close to laptop keyboard edge.</div>
+          <div class="scenario-desc">Benchmark test: coffee mug edge touching laptop keyboard boundary.</div>
         </div>
         <div class="scenario-card" data-scenario="distraction">
           <div class="scenario-title"><i data-lucide="smartphone" style="color:var(--accent-purple);"></i> 4. Study Distraction</div>
-          <div class="scenario-desc">Smartphone in active focus zone triggering distraction penalty.</div>
+          <div class="scenario-desc">Benchmark test: smartphone inside primary study focus zone.</div>
         </div>
       </div>
 
@@ -110,6 +110,13 @@
             </div>
 
             <div class="toolbar-group">
+              <!-- Video File Playback Controls (Visible only during video file playback) -->
+              <div id="video-controls-bar" style="display:none; align-items:center; gap:0.4rem;">
+                <button id="btn-video-play-pause" class="btn btn-primary" style="background:#8b5cf6; border-color:#8b5cf6;">
+                  <i data-lucide="pause"></i> Pause Video
+                </button>
+              </div>
+
               <button id="btn-toggle-zones" class="btn btn-toggle active">
                 <i data-lucide="grid"></i> Zones
               </button>
@@ -139,12 +146,14 @@
           <!-- Viewport Footer Controls -->
           <div class="viewport-footer">
             <div class="slider-group">
-              <span>Confidence Threshold:</span>
+              <span>Detection Confidence Threshold:</span>
               <input type="range" id="conf-threshold" min="0.2" max="0.9" step="0.05" value="0.5">
               <span id="conf-val" style="font-family:var(--font-mono); font-weight:700;">50%</span>
             </div>
             <div>
-              <span>System: <strong>Real-time GPU WebGL Inference</strong></span>
+              <span style="font-size:0.75rem; color:var(--text-muted);">
+                Supported COCO Classes: <strong>Laptop, Keyboard, Mouse, Phone, Book, Cup, Bottle, Person, Scissors</strong>
+              </span>
             </div>
           </div>
         </div>
@@ -188,12 +197,15 @@
                 </div>
               </div>
             </div>
+            <div style="font-size:0.7rem; color:var(--text-dim); margin-top:0.6rem; border-top:1px solid rgba(255,255,255,0.06); padding-top:0.4rem;">
+              * Project-defined heuristic metric combining count (35%), surface area (40%), and edge density (25%).
+            </div>
           </div>
 
           <!-- Card 2: Detected Categories Summary -->
           <div class="hud-card">
             <div class="hud-title">
-              <span>Categorized Inventory</span>
+              <span>Verified COCO Inventory</span>
               <i data-lucide="layers"></i>
             </div>
             <div class="category-grid">
@@ -228,7 +240,7 @@
             </div>
           </div>
 
-          <!-- Card 3: Proximity & Ergonomics Status -->
+          <!-- Card 3: Proximity & Distraction Status -->
           <div class="hud-card">
             <div class="hud-title">
               <span>Safety & Focus Telemetry</span>
@@ -237,22 +249,25 @@
             <div class="status-pill-list">
               <div class="status-pill-item">
                 <div class="status-pill-label">
-                  <i data-lucide="smartphone" style="font-size:0.9rem;"></i> Distraction Status
+                  <i data-lucide="smartphone" style="font-size:0.9rem;"></i> Distraction (Phone)
                 </div>
-                <span id="tag-distraction" class="status-tag safe">Focus Zone Clear</span>
+                <span id="tag-distraction" class="status-tag safe">Work Zone Clear</span>
               </div>
               <div class="status-pill-item">
                 <div class="status-pill-label">
-                  <i data-lucide="user-check" style="font-size:0.9rem;"></i> Ergonomics
+                  <i data-lucide="user-check" style="font-size:0.9rem;"></i> Screen Proximity
                 </div>
-                <span id="tag-ergonomics" class="status-tag safe">Good Posture</span>
+                <span id="tag-ergonomics" class="status-tag safe">Optimal Proximity</span>
               </div>
               <div class="status-pill-item">
                 <div class="status-pill-label">
-                  <i data-lucide="focus" style="font-size:0.9rem;"></i> Session Focus Score
+                  <i data-lucide="focus" style="font-size:0.9rem;"></i> Attentive Time Ratio
                 </div>
                 <span id="focus-score-val" style="font-family:var(--font-mono); font-weight:700; color:var(--accent-cyan);">95%</span>
               </div>
+            </div>
+            <div style="font-size:0.7rem; color:var(--text-dim); margin-top:0.6rem; border-top:1px solid rgba(255,255,255,0.06); padding-top:0.4rem;">
+              * Phone distraction checks Primary Work Zone overlap. Proximity is a 2D bounding-box proxy.
             </div>
           </div>
 
@@ -304,7 +319,7 @@
               <span class="pipeline-step-num">3</span>
               <div>
                 <strong>Gaussian Smoothing</strong>
-                <div style="font-size:0.72rem; color:var(--text-muted);">5x5 Convolution Filter</div>
+                <div style="font-size:0.72rem; color:var(--text-muted);">5x5 Kernel + Edge Clamping</div>
               </div>
             </div>
             <i data-lucide="chevron-right"></i>
@@ -359,7 +374,7 @@
               <span class="pipeline-step-num">8</span>
               <div>
                 <strong>Final Neural Detection</strong>
-                <div style="font-size:0.72rem; color:var(--text-muted);">Bounding Box Localization</div>
+                <div style="font-size:0.72rem; color:var(--text-muted);">Edge Proximity & BBoxes</div>
               </div>
             </div>
             <i data-lucide="chevron-right"></i>
@@ -401,7 +416,7 @@
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
         <div>
           <h2 style="font-size:1.3rem;">Workspace Telemetry & Audit</h2>
-          <p style="font-size:0.85rem; color:var(--text-muted);">Session metrics, clutter progression, and object occurrence frequencies.</p>
+          <p style="font-size:0.85rem; color:var(--text-muted);">Session metrics, clutter progression, and verified object occurrences.</p>
         </div>
         <div style="display:flex; gap:0.75rem;">
           <button id="btn-export-report" class="btn btn-primary">
@@ -434,77 +449,90 @@
     <!-- ================= TAB 4: THEORY & VIVA DEFENSE ================= -->
     <section id="tab-theory" class="tab-content">
       <div class="doc-section">
-        <h2><i data-lucide="graduation-cap"></i> Academic CVIP Project Documentation</h2>
+        <h2><i data-lucide="graduation-cap"></i> Academic CVIP Project Documentation & Formulations</h2>
         <p>
-          The <strong>Smart Desk Object Detection and Monitoring System</strong> combines classical digital image processing principles with modern deep learning convolutional architectures to evaluate workspace cleanliness, ergonomics, study distractions, and liquid spill hazards.
+          The <strong>Smart Desk Object Detection and Monitoring System</strong> combines classical digital image processing principles with deep learning convolutional architectures to evaluate workspace cleanliness, user screen proximity, phone-based study distractions, and liquid spill hazards.
         </p>
 
-        <h3>1. System Architecture & Processing Pipeline</h3>
-        <p>The system executes an 8-stage image processing and vision inference pipeline:</p>
-        <ol>
-          <li><strong>Image Acquisition:</strong> Frame sampled from video feed or static image matrix \( I(x, y) \).</li>
-          <li><strong>Color Space Conversion:</strong> ITU-R BT.601 luminance mapping \( Y = 0.299R + 0.587G + 0.114B \).</li>
-          <li><strong>Gaussian Filtering:</strong> 2D convolution with a \( 5\times5 \) normalized kernel for noise suppression.</li>
-          <li><strong>Gradient Derivation:</strong> Sobel operators \( G_x, G_y \) compute edge magnitude and orientation angle \( \theta \).</li>
-          <li><strong>Canny Edge Detection:</strong> Non-Maximum Suppression (NMS) and double-threshold hysteresis.</li>
-          <li><strong>Otsu Global Binarization:</strong> Separates foreground clutter by maximizing inter-class variance \( \sigma_B^2 \).</li>
-          <li><strong>Neural Object Detection:</strong> Single-shot multi-box detection (COCO-SSD / MobileNetV2) computing class probabilities and bounding box coordinates.</li>
-          <li><strong>Spatial Proximity & Clutter Analytics:</strong> Evaluates Euclidean hazard distances and the Desk Clutter Index (DCI).</li>
-        </ol>
-
-        <h3>2. Mathematical Formulations</h3>
+        <h3>1. Standardized Mathematical Formulations</h3>
         
         <div class="formula-box" style="margin: 1rem 0;">
-          <strong>Desk Clutter Index (DCI):</strong><br>
-          \[ \text{DCI} = \min\left(100, \; 100 \times \left[ 0.35 \cdot \min\left(\frac{N}{8}, 1\right) + 0.40 \cdot \frac{\sum_{i=1}^N \text{Area}(B_i)}{\text{Area}_{\text{desk}}} + 0.25 \cdot E_{\text{density}} \right]\right) \]
+          <strong>1. Desk Clutter Index (DCI) — Standardized Project-Defined Heuristic:</strong><br>
+          \[ \text{DCI} = \min\left(100, \; 100 \times \left[ 0.35 \cdot \min\left(\frac{N}{8}, 1\right) + 0.40 \cdot \frac{\sum_{i=1}^N \text{Area}(B_i)}{0.75 \cdot \text{Area}_{\text{desk}}} + 0.25 \cdot E_{\text{density}} \right]\right) \]
+          <div style="font-size:0.8rem; color:#94a3b8; margin-top:0.4rem;">
+            * Note: DCI is a project-defined heuristic score for relative clutter evaluation, standardized identically across JavaScript and Python implementations.
+          </div>
         </div>
 
         <div class="formula-box" style="margin: 1rem 0;">
-          <strong>Spill Hazard Proximity Metric:</strong><br>
-          \[ d_{\text{hazard}} = \min_{i \in \text{Liquids}, j \in \text{Tech}} \sqrt{(x_i - x_j)^2 + (y_i - y_j)^2} \]
-          \[ \text{Condition: If } d_{\text{hazard}} < 110\text{px} \implies \text{CRITICAL HAZARD ALARM} \]
+          <strong>2. Edge-to-Edge Bounding Box Spill Hazard Metric (Normalized):</strong><br>
+          For liquid box \( A \) and tech box \( B \):<br>
+          \[ \Delta x = \max\left(0, \; \max(x_{1A}, x_{1B}) - \min(x_{2A}, x_{2B})\right) \]
+          \[ \Delta y = \max\left(0, \; \max(y_{1A}, y_{1B}) - \min(y_{2A}, y_{2B})\right) \]
+          \[ d_{\text{edge}} = \sqrt{\Delta x^2 + \Delta y^2}, \quad d_{\text{norm}} = \frac{d_{\text{edge}}}{\sqrt{W^2 + H^2}} \]
+          \[ \text{Critical Hazard Condition: } d_{\text{edge}} = 0 \text{ (Overlap)} \quad \text{OR} \quad d_{\text{norm}} < 0.05 \]
+          <div style="font-size:0.8rem; color:#94a3b8; margin-top:0.4rem;">
+            * Replaces misleading center-to-center distance with true outer boundary separation. Pixel distance is an image-plane proxy metric.
+          </div>
         </div>
 
         <div class="formula-box" style="margin: 1rem 0;">
-          <strong>Intersection over Union (IoU):</strong><br>
-          \[ \text{IoU}(B_{\text{pred}}, B_{\text{gt}}) = \frac{\text{Area}(B_{\text{pred}} \cap B_{\text{gt}})}{\text{Area}(B_{\text{pred}} \cup B_{\text{gt}})} \]
+          <strong>3. Luminance Grayscale Conversion (ITU-R BT.601):</strong><br>
+          \[ Y = 0.299 \cdot R + 0.587 \cdot G + 0.114 \cdot B \]
         </div>
+
+        <div class="formula-box" style="margin: 1rem 0;">
+          <strong>4. Gaussian Kernel Convolution with Edge Replicated Padding:</strong><br>
+          \[ G_\sigma(x, y) = \frac{1}{2\pi\sigma^2} e^{-\frac{x^2 + y^2}{2\sigma^2}} * I(x, y) \]
+          * Implemented with boundary coordinate replication to eliminate artificial dark border artifacts.
+        </div>
+
+        <h3>2. Verified Supported Object Classes (COCO Dataset)</h3>
+        <p>The system detects the following verified classes from the standard 80-class COCO benchmark:</p>
+        <ul>
+          <li><strong>Study & Productive Tools:</strong> <code>laptop</code>, <code>keyboard</code>, <code>mouse</code>, <code>book</code>, <code>scissors</code></li>
+          <li><strong>Consumables / Spill Risks:</strong> <code>cup</code>, <code>bottle</code>, <code>wine glass</code>, <code>bowl</code></li>
+          <li><strong>Distraction Hazards:</strong> <code>cell phone</code>, <code>remote</code></li>
+          <li><strong>User Presence:</strong> <code>person</code></li>
+        </ul>
+        <p style="font-size:0.85rem; color:#94a3b8;">
+          <em>Academic Transparency Note: Classes like "notebook", "pen", or "pencil" are not part of the standard COCO 80-class weights and would require training a custom domain-specific YOLO model. Only verified standard classes are claimed.</em>
+        </p>
 
         <h3>3. Frequently Asked Viva / Examination Questions & Model Answers</h3>
 
         <div class="viva-card">
-          <div class="viva-q"><span>Q1:</span> Why convert the RGB image to Grayscale before running Canny edge detection?</div>
+          <div class="viva-q"><span>Q1:</span> Why did you use edge-to-edge bounding box separation instead of center-to-center distance for spill hazards?</div>
           <div class="viva-a">
-            Color information adds 3 redundant spatial channels (\(R, G, B\)). Edges correspond to high-frequency spatial discontinuities in luminance. Converting to grayscale with luminance weights (\(0.299R + 0.587G + 0.114B\)) preserves human visual perception while reducing computational complexity by 66%.
+            Center-to-center distance is misleading when dealing with objects of disparate sizes (e.g., a large 15-inch laptop and a small espresso cup). A cup could be physically touching the keyboard edge while its center is still 250px away from the laptop center. Bounding-box edge separation calculates the true Euclidean gap between the nearest rectangle boundaries (\( \Delta x, \Delta y \)), correctly detecting collision (\( d = 0 \)) regardless of object scale.
           </div>
         </div>
 
         <div class="viva-card">
-          <div class="viva-q"><span>Q2:</span> What are the 5 core stages of the Canny Edge Detection algorithm?</div>
+          <div class="viva-q"><span>Q2:</span> Why normalise the hazard distance by the frame diagonal?</div>
           <div class="viva-a">
-            1. Gaussian Blur (noise suppression), 2. Sobel Gradient Magnitude and Direction Calculation, 3. Non-Maximum Suppression (edge thinning), 4. Double Thresholding (identifying strong, weak, and non-edge pixels), and 5. Edge Tracking by Hysteresis (suppressing weak edges not connected to strong ones).
+            Raw pixel thresholds break when camera resolution changes (e.g. 100px on a 640x480 webcam is a huge distance, while 100px on a 4K stream is tiny). Normalizing by \( \sqrt{W^2 + H^2} \) makes the hazard proximity threshold scale-invariant across any input resolution.
           </div>
         </div>
 
         <div class="viva-card">
-          <div class="viva-q"><span>Q3:</span> How does Otsu's thresholding method determine the optimal binarization threshold?</div>
+          <div class="viva-q"><span>Q3:</span> How did you solve the artificial dark border problem in Gaussian smoothing?</div>
           <div class="viva-a">
-            Otsu's algorithm exhaustively iterates through all 256 grayscale levels to find the threshold \( T^* \) that maximizes between-class variance:
-            \( \sigma_B^2(T) = w_0(T) w_1(T) [\mu_0(T) - \mu_1(T)]^2 \), which equivalently minimizes intra-class variance without requiring manual heuristic tuning.
+            Standard convolution kernels cannot center over boundary pixels without exceeding array bounds. Initializing the output with zeros creates a dark border around the frame. We solved this using coordinate clamping (edge replication padding), mapping out-of-bound indices to the nearest valid edge pixel (\( \text{clamp}(y + ky, 0, H-1) \)), preserving smooth intensity across boundaries.
           </div>
         </div>
 
         <div class="viva-card">
-          <div class="viva-q"><span>Q4:</span> How does the Spill Hazard detection prevent false alarms?</div>
+          <div class="viva-q"><span>Q4:</span> How does the Phone-Based Distraction Estimator determine distraction?</div>
           <div class="viva-a">
-            It specifically pairs classes categorized as liquids (cup, mug, bottle) with sensitive electronics (laptop, keyboard, mouse) and applies a minimum Euclidean distance threshold (\( d < 110\text{px} \)). Items outside the danger zone or two tech items placed next to each other do not trigger the spill warning.
+            Rather than making unverified claims about mental focus, the system uses spatial zoning: it tracks whether a <code>cell phone</code> intersects the user's defined Primary Work Zone while a user is present. If the desk is vacant, time is recorded as "inactive/untracked" rather than accumulating false study focus.
           </div>
         </div>
 
         <div class="viva-card">
-          <div class="viva-q"><span>Q5:</span> Why use the HSV color space for beverage detection instead of RGB?</div>
+          <div class="viva-q"><span>Q5:</span> What are the 5 core stages of the Canny Edge Detection algorithm?</div>
           <div class="viva-a">
-            In RGB, color chromaticity and luminance intensity are tightly coupled. Under changing workspace lighting or shadow, RGB pixel values shift dramatically. In HSV, Hue (\(H\)) represents pure color wavelength independent of illumination Value (\(V\)) and Saturation (\(S\)), making color segmentation robust against lighting variations.
+            1. Gaussian Smoothing (noise suppression with edge replication), 2. Sobel Gradient Magnitude and Direction Calculation, 3. Non-Maximum Suppression (edge thinning), 4. Double Thresholding (identifying strong, weak, and non-edge pixels), and 5. Edge Tracking by Hysteresis (connecting weak edges to strong neighbors).
           </div>
         </div>
 
@@ -523,7 +551,7 @@
       <div id="drop-zone" class="drop-zone">
         <i data-lucide="cloud-upload" style="width:48px; height:48px; color:var(--primary); margin-bottom:0.75rem;"></i>
         <p style="font-weight:600; margin-bottom:0.3rem;">Drag & drop desk photo or video here</p>
-        <p style="font-size:0.78rem; color:var(--text-muted); margin-bottom:1rem;">Supports PNG, JPG, WEBP, MP4</p>
+        <p style="font-size:0.78rem; color:var(--text-muted); margin-bottom:1rem;">Supports PNG, JPG, WEBP, MP4, WEBM</p>
         <input type="file" id="file-upload" accept="image/*,video/*" style="display:none;">
         <button class="btn btn-primary" onclick="document.getElementById('file-upload').click();">Browse Files</button>
       </div>
@@ -539,7 +567,6 @@
   <script src="js/app.js"></script>
   
   <script>
-    // Initialize Lucide icons
     if (window.lucide) {
       window.lucide.createIcons();
     }

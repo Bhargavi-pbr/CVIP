@@ -1,8 +1,8 @@
 /**
  * ============================================================================
  * Object Detection Engine
- * Integrates TensorFlow.js COCO-SSD model with zero-friction offline fallback
- * Renders annotated bounding boxes, hazard proximity lines, and zoning grids
+ * Integrates TensorFlow.js COCO-SSD model with robust status handling
+ * Renders verified COCO bounding boxes, edge-to-edge hazard proximity lines, and zoning grids
  * ============================================================================
  */
 
@@ -11,15 +11,23 @@ class SmartDeskDetector {
     this.model = null;
     this.isLoading = false;
     this.isModelReady = false;
+    this.loadError = null;
     this.confidenceThreshold = 0.50;
     this.showZones = true;
     this.showHazardLines = true;
+
+    // Verified supported classes in standard COCO-SSD MobileNetV2
+    this.supportedClasses = new Set([
+      'person', 'laptop', 'mouse', 'keyboard', 'cell phone', 
+      'book', 'bottle', 'cup', 'wine glass', 'bowl', 'scissors'
+    ]);
   }
 
   // Load COCO-SSD model
   async loadModel() {
     if (this.model || this.isLoading) return;
     this.isLoading = true;
+    this.loadError = null;
 
     try {
       if (window.cocoSsd) {
@@ -28,15 +36,18 @@ class SmartDeskDetector {
         this.isModelReady = true;
         console.log('COCO-SSD model loaded successfully!');
         if (window.deskAnalytics) {
-          window.deskAnalytics.addLog('info', 'Deep Learning Model (COCO-SSD MobileNetV2) loaded');
+          window.deskAnalytics.addLog('info', 'Deep Learning Model (COCO-SSD MobileNetV2) loaded successfully');
         }
       } else {
-        console.warn('COCO-SSD CDN not reached. Running on built-in Heuristic CV Engine.');
-        this.isModelReady = false;
+        throw new Error('COCO-SSD library not detected in window scope.');
       }
     } catch (err) {
-      console.warn('Failed to load COCO-SSD, switching to fallback engine:', err);
+      console.warn('COCO-SSD Model Load Notice:', err);
       this.isModelReady = false;
+      this.loadError = err.message || 'Failed to load model from CDN';
+      if (window.deskAnalytics) {
+        window.deskAnalytics.addLog('warn', 'AI model loading deferred. Preset benchmarks remain active.');
+      }
     } finally {
       this.isLoading = false;
     }
@@ -49,12 +60,15 @@ class SmartDeskDetector {
     if (this.model && this.isModelReady) {
       try {
         const rawDetections = await this.model.detect(sourceElement);
-        return rawDetections.filter(d => d.score >= this.confidenceThreshold);
+        // Filter by user confidence threshold and supported workspace classes
+        return rawDetections.filter(d => 
+          d.score >= this.confidenceThreshold && 
+          this.supportedClasses.has(d.class.toLowerCase())
+        );
       } catch (e) {
         console.error('Detection frame error:', e);
       }
     }
-    // Return empty if no model and no preset
     return [];
   }
 
@@ -84,31 +98,31 @@ class SmartDeskDetector {
   drawDeskZones(ctx, width, height) {
     // Primary Work Zone (Center)
     ctx.save();
-    ctx.strokeStyle = 'rgba(6, 182, 212, 0.4)';
+    ctx.strokeStyle = 'rgba(6, 182, 212, 0.45)';
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 6]);
-    ctx.fillStyle = 'rgba(6, 182, 212, 0.03)';
+    ctx.fillStyle = 'rgba(6, 182, 212, 0.04)';
     const wz = { x: width * 0.2, y: height * 0.25, w: width * 0.6, h: height * 0.65 };
     ctx.fillRect(wz.x, wz.y, wz.w, wz.h);
     ctx.strokeRect(wz.x, wz.y, wz.w, wz.h);
 
-    ctx.fillStyle = 'rgba(6, 182, 212, 0.7)';
-    ctx.font = '11px sans-serif';
+    ctx.fillStyle = 'rgba(6, 182, 212, 0.85)';
+    ctx.font = 'bold 11px sans-serif';
     ctx.fillText('PRIMARY WORK ZONE', wz.x + 10, wz.y + 18);
 
     // Safe Beverage Zone (Right Edge)
-    ctx.strokeStyle = 'rgba(16, 185, 129, 0.4)';
+    ctx.strokeStyle = 'rgba(16, 185, 129, 0.45)';
     ctx.fillStyle = 'rgba(16, 185, 129, 0.04)';
     const bz = { x: width * 0.82, y: height * 0.12, w: width * 0.15, h: height * 0.75 };
     ctx.fillRect(bz.x, bz.y, bz.w, bz.h);
     ctx.strokeRect(bz.x, bz.y, bz.w, bz.h);
 
-    ctx.fillStyle = 'rgba(16, 185, 129, 0.7)';
+    ctx.fillStyle = 'rgba(16, 185, 129, 0.85)';
     ctx.fillText('SAFE DRINK ZONE', bz.x + 8, bz.y + 18);
     ctx.restore();
   }
 
-  // Render Laser Proximity Hazard Lines
+  // Render Laser Proximity Hazard Lines (Edge-to-Edge Distance)
   drawHazardLines(ctx, hazards) {
     ctx.save();
     hazards.forEach(h => {
@@ -123,20 +137,25 @@ class SmartDeskDetector {
       ctx.lineTo(h.tech.center.x, h.tech.center.y);
       ctx.stroke();
 
-      // Distance tag in midpoint
+      // Midpoint tag showing true Edge-to-Edge separation
       const midX = (h.liquid.center.x + h.tech.center.x) / 2;
       const midY = (h.liquid.center.y + h.tech.center.y) / 2;
 
+      const badgeText = h.edgeDist === 0 ? 'OVERLAP' : `${h.edgeDist}px edge`;
+      ctx.font = 'bold 10px sans-serif';
+      const textWidth = ctx.measureText(badgeText).width;
+      const pillW = textWidth + 14;
+      const pillH = 20;
+
       ctx.fillStyle = isCritical ? '#f43f5e' : '#f59e0b';
       ctx.beginPath();
-      ctx.arc(midX, midY, 14, 0, Math.PI * 2);
+      ctx.roundRect(midX - pillW / 2, midY - pillH / 2, pillW, pillH, 10);
       ctx.fill();
 
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 10px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(`${Math.round(h.dist)}px`, midX, midY);
+      ctx.fillText(badgeText, midX, midY);
 
       // Warning circle around tech if critical
       if (isCritical) {
@@ -144,7 +163,7 @@ class SmartDeskDetector {
         ctx.lineWidth = 2;
         ctx.beginPath();
         const [tx, ty, tw, th] = h.tech.bbox;
-        ctx.arc(tx + tw / 2, ty + th / 2, Math.max(tw, th) * 0.7, 0, Math.PI * 2);
+        ctx.arc(tx + tw / 2, ty + th / 2, Math.max(tw, th) * 0.65, 0, Math.PI * 2);
         ctx.stroke();
       }
     });
@@ -156,7 +175,6 @@ class SmartDeskDetector {
     const [x, y, w, h] = det.bbox;
     const cat = window.deskAnalytics ? window.deskAnalytics.categorize(det.class) : 'productive';
 
-    // Color definitions
     let strokeColor = '#3b82f6';
     let bgColor = 'rgba(59, 130, 246, 0.15)';
 
@@ -184,7 +202,7 @@ class SmartDeskDetector {
     ctx.fill();
     ctx.stroke();
 
-    // Corner brackets for high-tech aesthetic
+    // Corner brackets
     const bracketLen = Math.min(16, Math.min(w, h) * 0.3);
     ctx.lineWidth = 3.5;
     // Top-left
